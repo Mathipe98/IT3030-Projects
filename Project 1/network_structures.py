@@ -1,6 +1,7 @@
 """
 Here are some module docstrings
 """
+from typing import Callable
 import numpy as np
 np.random.seed(123)
 
@@ -19,7 +20,7 @@ class Layer:
         # Keep track of the results of the layer for backprop
         self.activations = None
 
-    def get_activations(self, node_values: np.ndarray) -> np.ndarray:
+    def calculate_output(self, node_values: np.ndarray) -> np.ndarray:
         """
         Function that takes in the outputs of the nodes in the current layer, and calculates the
         activations for the next layer
@@ -39,7 +40,7 @@ class Layer:
         activations = self.act_func(output)
         return activations
 
-    def set_activations(self, activations: np.ndarray) -> None:
+    def save_output(self, activations: np.ndarray) -> None:
         """
         Method for setting the result output of the current layer
 
@@ -54,7 +55,7 @@ class Layer:
 
 class NeuralNetwork:
 
-    def __init__(self, layers_config: list[tuple[int, Callable]], batch_size: int=1) -> None:
+    def __init__(self, layers_config: list[tuple[int, Callable]], batch_size: int = 1) -> None:
         """
         Taking in parameters for neural network.
 
@@ -63,57 +64,36 @@ class NeuralNetwork:
                 List of tuples containing information of every layer. It has the following format:
                 [(number of nodes, act. func.), (number of nodes, act. func.), ...],
                 where the index of the tuple corresponds to the layer position
-            
+
             batch_size (int):
                 Integer describing the number of batches (examples) to operate on simultaneously
 
         """
         self.batch_size = batch_size
         self.layers = []
-        for i in range(len(layers_config) - 1):
-            # If batch size is 1, then we must have a 1D bias matrix. Else we create a 2D bias matrix
-            # It doesn't have to be broadcast, because numpy applies this automatically during addition
-            bias_shape = (layers_config[i+1][0],1) if batch_size > 1 else (layers_config[i+1][0],)
-            layer = Layer(
-                act_func=layers_config[i][1],
-                weights=
-                    np.random.uniform(
-                        low=-0.5,
-                        high=0.5,
-                        size=(layers_config[i][0], layers_config[i+1][0])
-                    ),
-                biases=
-                    np.zeros(shape=bias_shape)
-            )
-        self.layers = [
-            Layer(
-                act_func=layers_config[i][1],
-                weights=
-                    np.random.uniform(
-                        low=-0.5,
-                        high=0.5,
-                        size=(layers_config[i][0], layers_config[i+1][0])
-                    ),
-                biases=
-                    np.zeros(shape=(layers_config[i+1][0],1))
-            ) for i in range(len(layers_config) - 1)
-        ]
+        self.layers = [Layer(
+            act_func=layers_config[i][1],
+            weights=np.random.uniform(low=-0.1, high=0.1,
+                                      size=(layers_config[i][0], layers_config[i+1][0])),
+            biases=np.zeros(shape=(layers_config[i+1][0], 1)))
+            for i in range(len(layers_config) - 1)]
         # To make the forward pass function work with the final layer, we just add a final
         # Layer-object with the identity matrix (to return the same vector)
         n_outputs = layers_config[-1][0]
-        final_layer = Layer(act_func=layers_config[-1][1], weights=np.identity(n_outputs), biases=0)
+        final_layer = Layer(
+            act_func=layers_config[-1][1], weights=np.identity(n_outputs), biases=0)
         self.layers.append(final_layer)
 
     def forward_pass(self, network_inputs: np.ndarray) -> None:
         # Make sure that the number of inputs match the number of nodes in the input-layer
-        assert len(network_inputs) == self.layers[0].nodes
+        assert len(network_inputs) == self.layers[0].nodes, "Inputs don't match the number of nodes in the current layer"
         # Get the first layer activations for use in the later layers
-        current_output = self.layers[0].get_activations(network_inputs)
-        self.layers[0].set_activations(current_output)
+        current_output = self.layers[0].calculate_output(network_inputs)
+        self.layers[0].save_output(current_output)
         # Iterate through the rest of the layers, feeding the previous output as the next input
         for layer in self.layers[1:]:
-            current_output = layer.get_activations(current_output)
-            layer.set_activations(current_output)
+            current_output = layer.calculate_output(current_output)
+            layer.save_output(current_output)
         # Note to self: to extract the column of a numpy matrix, simply use matrix[:<index of column>]
 
 
@@ -141,13 +121,17 @@ def softmax(input_vector: np.ndarray) -> np.ndarray:
     return np.exp(input_vector) / np.sum(np.exp(input_vector), axis=0)
 
 
+def d_sigmoid(input_vector: np.ndarray) -> np.ndarray:
+    return sigmoid(input_vector) * (1 - sigmoid(input_vector))
+
+
 # User testing functions
 
 def test_activations() -> None:
     test_weights = np.array([[0.5, 0.5], [0.5, 0.5], [0.5, 0.5]])
     test = Layer(act_func=sigmoid, weights=test_weights, biases=1)
     test_outputs = np.array([0.1, 0.4, 0.8])
-    test_result = test.get_activations(test_outputs)
+    test_result = test.calculate_output(test_outputs)
     print(test_result)
 
 
@@ -155,7 +139,7 @@ def test_final_layer_activations() -> None:
     test_weights = np.array([[1]])
     test = Layer(act_func=sigmoid, weights=test_weights, biases=1)
     test_outputs = np.array([0.1])
-    test_result = test.get_activations(test_outputs)
+    test_result = test.calculate_output(test_outputs)
     print(test_result)
 
 
@@ -177,6 +161,7 @@ def test_network_forward_pass() -> None:
     for layer in test_object.layers:
         print(layer.activations)
     print()
+
 
 def test_forward_pass_with_batch() -> None:
     test_config = [(3, relu), (2, relu), (10, softmax)]
