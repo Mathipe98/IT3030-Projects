@@ -1,5 +1,6 @@
 import numpy as np
 from network_structures import *
+from nn_functions import *
 from visualization import DrawNN
 from timeit import default_timer as timer
 
