@@ -135,7 +135,7 @@ def d_cross_entropy(predictions: np.ndarray, targets: np.ndarray, sigmoid: bool 
     predictions = np.clip(predictions, epsilon, 1-epsilon)
     if sigmoid:
         targets = np.clip(targets, 0.1, 0.9)
-    return - targets / predictions + func(targets) / func(predictions)
+    return - (targets / predictions) + (func(targets) / func(predictions))
 
 
 def d_mse(predictions: np.ndarray, targets: np.ndarray, sigmoid: bool = False) -> np.ndarray:

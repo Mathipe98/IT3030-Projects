@@ -107,19 +107,29 @@ class Layer:
             np.ndarray: Will return the jacobian matrix w.r.t. weights for the current layer
         """
         # print(f"Input")
+        asd = self.activations[:, column]
+        print(f"asd: {asd}")
         diag_J_sum = self.da_func(self.activations[:, column])
+        a = self.prv_layer_inputs[:,column]
+        print("Diag J sum and previous layer input:")
+        print(diag_J_sum, a)
+        print(f"EINSUM RESULT:\n {np.einsum('i,j->ij', self.prv_layer_inputs[:,column], diag_J_sum)}")
         # Return object corresponds to J-hat; einsum is outer product
         return np.einsum('i,j->ij', self.prv_layer_inputs[:,column], diag_J_sum)
 
-    def update_weights(self, jacobian: np.ndarray, column: int=0, lr: float=1e-2) -> None:
-        prv = self.prv_layer_inputs[:,column]
-        
+    def update_weights(self, jacobian: np.ndarray, lr: float) -> None:
+        assert jacobian.shape == self.weights.shape, "Jacobian weight matrix and weights are not the same shape"
+        self.weights = self.weights - lr * jacobian 
+        # for i in range(self.weights.shape[0]):
+        #     for j in range(self.weights.shape[1]):
+        #         self.weights[i][j] -= lr * jacobian[i][j]
+
 
 
 
 class NeuralNetwork:
 
-    def __init__(self, config: Dict, batch_size: int = 1) -> None:
+    def __init__(self, config: Dict) -> None:
         """
         Taking in parameters for neural network.
 
@@ -131,7 +141,8 @@ class NeuralNetwork:
                 Integer describing the number of examples to operate on simultaneously
 
         """
-        self.batch_size: int = batch_size
+        self.batch_size: int = config['Batch size']
+        self.lr: float = config['Learning rate']
         self.hidden_layers: List[Layer] = []
         n_hl: int = config['Hidden layers']
         hl_neurons: List[int] = config['HL Neurons']
@@ -184,8 +195,12 @@ class NeuralNetwork:
         return self.dl_func(predictions, targets).T
 
     def backpropagation(self, network_inputs: np.ndarray, targets: np.ndarray) -> None:
+        epochs = 1000
+        #for _ in range(epochs):
         # First we must start by passing the inputs forward in the network
         self.forward_pass(network_inputs)
+        print(f"Predictions:\n {self.output_layer.activations}")
+        print(self.dl_func(self.output_layer.activations, targets))
         assert targets.shape == self.output_layer.activations.shape, "Targets must match the output layer mafakka"
         # We start off by getting the jacobian matrix of the loss function w.r.t. the output
         J_lz = self.get_loss_jacobian(targets)
@@ -198,12 +213,13 @@ class NeuralNetwork:
         J_lw = J_lz * J_hat_zw
         print(f"J^L_W:\n {J_lw}", end="\n\n")
         assert J_lw.shape == current_layer.weights.shape
-        self.update_weights(J_lw)
+        current_layer.update_weights(J_lw, self.lr)
         J_zy = current_layer.get_output_jacobian()
         print(f"J^Z_Y:\n {J_zy}", end="\n\n")
         # Now start the actual backpropagation
         for current_layer in reversed(self.hidden_layers):
             J_lz = np.dot(J_lz, J_zy)
+            # break
             print(f"\nNext layer J^L_hidden layer:\n {J_lz}", end="\n\n")
             # print(current_layer.activations, end="\n\n")
             J_hat_zw = current_layer.get_weight_jacobian()
@@ -212,10 +228,9 @@ class NeuralNetwork:
             J_lw = J_lz * J_hat_zw
             print(f"J^L_W:\n {J_lw}", end="\n\n")
             assert J_lw.shape == current_layer.weights.shape
-            self.update_weights(J_lw)
+            current_layer.update_weights(J_lw, self.lr)
             J_zy = current_layer.get_output_jacobian()
             print(f"J^Z_Y:\n {J_zy}", end="\n\n")
-
     
     
         
