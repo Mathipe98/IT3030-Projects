@@ -3,17 +3,21 @@ from math import cos, sin, atan
 
 
 class Neuron():
-    def __init__(self, x, y):
+    def __init__(self, x, y, label):
         self.x = x
         self.y = y
+        self.label = label
 
     def draw(self, neuron_radius):
         circle = pyplot.Circle((self.x, self.y), radius=neuron_radius, fill=False)
+        print(self.label)
         pyplot.gca().add_patch(circle)
+        pyplot.gca().annotate(self.label, xy=(self.x-.47, self.y-.32), fontsize=9)
 
 
 class Layer():
-    def __init__(self, network, number_of_neurons, number_of_neurons_in_widest_layer):
+    def __init__(self, network, number_of_neurons, number_of_neurons_in_widest_layer, label):
+        self.label = label
         self.vertical_distance_between_layers = 6
         self.horizontal_distance_between_neurons = 2
         self.neuron_radius = 0.5
@@ -24,9 +28,11 @@ class Layer():
 
     def __intialise_neurons(self, number_of_neurons):
         neurons = []
+        label = self.label
         x = self.__calculate_left_margin_so_layer_is_centered(number_of_neurons)
         for iteration in range(number_of_neurons):
-            neuron = Neuron(x, self.y)
+            neuron_label = label + str(iteration+1)
+            neuron = Neuron(x, self.y, neuron_label)
             neurons.append(neuron)
             x += self.horizontal_distance_between_neurons
         return neurons
@@ -74,8 +80,8 @@ class NeuralNetwork():
         self.layers = []
         self.layertype = 0
 
-    def add_layer(self, number_of_neurons ):
-        layer = Layer(self, number_of_neurons, self.number_of_neurons_in_widest_layer)
+    def add_layer(self, number_of_neurons, label):
+        layer = Layer(network=self, number_of_neurons=number_of_neurons, number_of_neurons_in_widest_layer=self.number_of_neurons_in_widest_layer, label=label)
         self.layers.append(layer)
 
     def draw(self):
@@ -89,6 +95,7 @@ class NeuralNetwork():
         pyplot.axis('off')
         pyplot.title( 'Neural Network architecture', fontsize=15 )
         pyplot.show()
+        pyplot.savefig('Network.jpg')
 
 class DrawNN():
     def __init__( self, neural_network ):
@@ -97,10 +104,14 @@ class DrawNN():
     def draw( self ):
         widest_layer = max( self.neural_network )
         network = NeuralNetwork( widest_layer )
-        for l in self.neural_network:
-            network.add_layer(l)
+        labels = ['Z', 'Y', 'X', 'U', 'T', 'S', 'R', 'Q', 'P']
+        index = 0
+        for l in reversed(self.neural_network):
+            network.add_layer(l, label=labels[index])
+            index += 1
+        network.layers = list(reversed(network.layers))
         network.draw()
 
 if __name__ == "__main__":
-    network = DrawNN( [2,8,8,1] )
+    network = DrawNN( [4,8,8,1] )
     network.draw()

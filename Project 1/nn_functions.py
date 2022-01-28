@@ -22,7 +22,7 @@ def tanh(input_vector: np.ndarray) -> np.ndarray:
     return np.tanh(input_vector)
 
 
-def unit(input_vector: np.ndarray) -> np.ndarray:
+def identity(input_vector: np.ndarray) -> np.ndarray:
     return input_vector
 
 
@@ -58,7 +58,7 @@ def d_tanh(input_vector: np.ndarray) -> np.ndarray:
     return f(input_vector)
 
 
-def d_unit(input_vector: np.ndarray) -> np.ndarray:
+def d_identity(input_vector: np.ndarray) -> np.ndarray:
     return np.ones(shape=input_vector.shape)
 
 # Note: no single derivative function for softmax because it's more complex and not directly applicable in general
@@ -77,19 +77,18 @@ def d_unit(input_vector: np.ndarray) -> np.ndarray:
 
 
 def cross_entropy(predictions: np.ndarray, targets: np.ndarray, sigmoid: bool = False) -> np.ndarray:
-    """
-    Thoughts:
-    input might be shape (m,) or (m,n)
-    Dot product does not work with the latter, then it has to be done on a column-by-column basis
+    """Cross-entropy loss function.
+    Uses einsum to compute column-wise dot products, and reshapes inputs to match this function.
 
     Args:
-        input_vector (np.ndarray): [description]
-        target_vector (np.ndarray): [description]
-        sigmoid (bool, optional): [description]. Defaults to False.
+        input_vector (np.ndarray): (m,n) array of predictions where m is the nodes in the output layer, and n is the batch size
+        target_vector (np.ndarray): (m,n) array of targets; same structure as predictions
+        sigmoid (bool, optional): Boolean value to clip targets if sigmoid is used. Defaults to False.
 
     Returns:
-        float: [description]
+        float: Array of cross-entropy loss of all predictions compared to target
     """
+    assert predictions.shape == targets.shape, "Predictions and targets must have same shapes"
     # f(x) = 1 - x
     # Formula: log(predictions) * targets + f(predictions) * f(targets)
     # Function that returns array with 1 - x for all elements x
