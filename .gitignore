@@ -131,3 +131,5 @@ dmypy.json
 *.idea
 *.vscode
 *venv
+
+Project 1/datasets

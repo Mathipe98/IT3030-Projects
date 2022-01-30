@@ -5,14 +5,14 @@ from visualization import DrawNN
 from timeit import default_timer as timer
 
 config = {
-        "Inputs": 25,
-        "Outputs": 2,
-        "Hidden layers": 2,
-        "HL Activation functions": [relu, relu],
-        "HL Neurons": [3, 8],
+        "Inputs": 3,
+        "Outputs": 3,
+        "Hidden layers": 1,
+        "HL Activation functions": [sigmoid, relu],
+        "HL Neurons": [2, 8],
         "Output function": sigmoid,
         "Loss function": mse,
-        "Learning rate": 1e-2,
+        "Learning rate": 1,
         "Batch size": 1,
     }
 
@@ -99,12 +99,15 @@ def test_timing():
 def test_backprop() -> None:
     batch_size = config["Batch size"]
     network = NeuralNetwork(config)
-    # inputs = np.array([1, 2, 3]).reshape(3,batch_size)
-    inputs = np.zeros(shape=(25, batch_size))
-    inputs[18][0] = 1
+    # inputs =  np.array([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0]).reshape(25,batch_size)
+    inputs = np.array([1,0,0]).reshape(3,1)
+    print(network.hidden_layers[0].weights)
+    print(network.output_layer.weights)
+    # inputs = np.zeros(shape=(25, batch_size))
+    # inputs[18][0] = 1
     print(f"Inputs into the network:\n {inputs}", end="\n\n")
     print(f"Network structure:\n {[inputs.shape[0]] + [layer.n_nodes for layer in network.hidden_layers] + [network.output_layer.n_nodes]}")
-    targets = np.array([0,1]).reshape(2,batch_size)
+    targets = np.array([1, 0, 0]).reshape(3,batch_size)
     print(f"Network targets:\n {targets}", end="\n\n")
     # print(f"Results from forward pass with batch size: " + str(3))
     # for i in range(network.output_layer.activations.shape[1]):
@@ -113,15 +116,9 @@ def test_backprop() -> None:
     # print(f"\nCorrect targets from above example:")
     # for i in range(targets.shape[1]):
     #     print(targets[:,i])
-    # network.backpropagation(inputs, targets)
-    network.forward_pass(inputs)
+    network.backpropagation(inputs, targets)
     predictions = network.output_layer.activations
-    # print(f"\nFinal layer predictions:\n {predictions}", end="\n\n")
-    # print(f"\nFinal layer targets:\n {targets}", end="\n\n")
-    # print(f"Predictions vs. targets loss:\n {cross_entropy(predictions, targets)}")
-    for layer in [network.output_layer] + network.hidden_layers:
-        print(f"Nodes in layer: {layer.n_nodes}")
-        print(f"PREVIOUS ACTIVATIONS:\n {layer.prv_layer_inputs}")
+    print(network.l_func(predictions, targets))
 
 if __name__ == '__main__':
     # draw_network()

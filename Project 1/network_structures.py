@@ -8,6 +8,37 @@ import numpy as np
 from nn_functions import d_cross_entropy, d_identity, d_mse, d_relu, d_sigmoid, d_tanh
 np.random.seed(123)
 
+x1 = 0.4
+x2 = 0.1
+x3 = 0.8
+
+y1 = 0.4
+y2 = 0.3
+
+z1 = 0.4
+
+X = np.array([x1,x2,x3]).reshape(3,1)
+Y = np.array([y1,y2]).reshape(2,1)
+Z = np.array([z1]).reshape(1,1)
+
+v11 = 0.1
+v12 = 0.2
+v21 = 0.5
+v22 = 0.4
+v31 = 0.3
+v32 = 0.2
+
+Y_weights = np.array([
+    [v11, v12],
+    [v21, v22],
+    [v31, v32]
+])
+
+w11 = 0.2
+w21 = 0.1
+
+Z_weights = np.array([w11, w21]).reshape(2,1)
+
 # Dict containing the mappings from functions to their derivatives
 function_map = {
     "sigmoid": d_sigmoid,
@@ -89,7 +120,7 @@ class Layer:
         activations = self.activations[:, column]
         # If we ignore the diagonal for a second, the J_soft matrix corresponds to the outer product of the
         # activation vector with itself (with a negative prefix)
-        J_soft = - np.einsum('i,j->ij', activations, activations)
+        J_soft = np.einsum('i,j->ij', activations, activations) * -1
         # The above matrix is basically -s_m * s_n for index (m,n). However for the diagonal, we now have
         # -s_n^2 (m=n), rather than s_n - s_n^2. Thus we are lacking one s_n, so all we need to do is add it back
         J_soft = J_soft + np.diag(activations)
@@ -108,12 +139,12 @@ class Layer:
         """
         # print(f"Input")
         asd = self.activations[:, column]
-        print(f"asd: {asd}")
+        # print(f"asd: {asd}")
         diag_J_sum = self.da_func(self.activations[:, column])
         a = self.prv_layer_inputs[:,column]
-        print("Diag J sum and previous layer input:")
-        print(diag_J_sum, a)
-        print(f"EINSUM RESULT:\n {np.einsum('i,j->ij', self.prv_layer_inputs[:,column], diag_J_sum)}")
+        # print("Diag J sum and previous layer input:")
+        # print(diag_J_sum, a)
+        # print(f"EINSUM RESULT:\n {np.einsum('i,j->ij', self.prv_layer_inputs[:,column], diag_J_sum)}")
         # Return object corresponds to J-hat; einsum is outer product
         return np.einsum('i,j->ij', self.prv_layer_inputs[:,column], diag_J_sum)
 
@@ -159,6 +190,7 @@ class NeuralNetwork:
             w_shape = (n, m)
             b_shape = (m,1)# (m,) if self.batch_size == 1 else (m,1)
             weights = np.random.uniform(low=-0.1, high=0.1, size=w_shape)
+            # weights = Y_weights
             biases = np.zeros(shape=b_shape)
             self.hidden_layers.append(Layer(func, d_func, weights, biases))
             # Set the next n value for correct dimensions in the next weight matrix
@@ -169,6 +201,7 @@ class NeuralNetwork:
         w_shape = (n, m)
         b_shape = (m,1) # (m,) if self.batch_size == 1 else (m,1)
         weights = np.random.uniform(low=-0.1, high=0.1, size=w_shape)
+        # weights = Z_weights
         biases = np.zeros(shape=b_shape)
         final_layer = Layer(output_func, d_output_func, weights, biases)
         # If we use softmax, then treat the output layer as a hidden layer, and add a final layer
@@ -192,49 +225,50 @@ class NeuralNetwork:
 
     def get_loss_jacobian(self, targets: np.ndarray) -> np.ndarray:
         predictions = self.output_layer.activations
+        print(f"Predictions shape:\n {predictions.shape}\n")
+        print(f"Targets shape:\n {targets.shape}")
         return self.dl_func(predictions, targets).T
 
     def backpropagation(self, network_inputs: np.ndarray, targets: np.ndarray) -> None:
-        epochs = 1000
-        #for _ in range(epochs):
-        # First we must start by passing the inputs forward in the network
-        self.forward_pass(network_inputs)
-        print(f"Predictions:\n {self.output_layer.activations}")
-        print(self.dl_func(self.output_layer.activations, targets))
-        assert targets.shape == self.output_layer.activations.shape, "Targets must match the output layer mafakka"
-        # We start off by getting the jacobian matrix of the loss function w.r.t. the output
-        J_lz = self.get_loss_jacobian(targets)
-        print(f"\nJ^L_Z:\n {J_lz}", end="\n\n")
-        current_layer = self.output_layer
-        # print(current_layer.activations, end="\n\n")
-        J_hat_zw = current_layer.get_weight_jacobian()
-        print(f"J^Z_W:\n {J_hat_zw}", end="\n\n")
-        # Finally get the jacobian matrix for the actual weights in the current layer
-        J_lw = J_lz * J_hat_zw
-        print(f"J^L_W:\n {J_lw}", end="\n\n")
-        assert J_lw.shape == current_layer.weights.shape
-        current_layer.update_weights(J_lw, self.lr)
-        J_zy = current_layer.get_output_jacobian()
-        print(f"J^Z_Y:\n {J_zy}", end="\n\n")
-        # Now start the actual backpropagation
-        for current_layer in reversed(self.hidden_layers):
-            J_lz = np.dot(J_lz, J_zy)
-            # break
-            print(f"\nNext layer J^L_hidden layer:\n {J_lz}", end="\n\n")
+        epochs = 1
+        for _ in range(epochs):
+            # First we must start by passing the inputs forward in the network
+            self.forward_pass(network_inputs)
+            # REMOVE THIS
+            # self.hidden_layers[0].activations = Y
+            # self.hidden_layers[0].prv_layer_inputs = X
+            # self.output_layer.activations = Z
+            # self.output_layer.prv_layer_inputs = Y
+            # print(f"Predictions:\n {self.output_layer.activations}")
+            assert targets.shape == self.output_layer.activations.shape, "Targets must match the output layer mafakka"
+            # We start off by getting the jacobian matrix of the loss function w.r.t. the output
+            J_lz = self.get_loss_jacobian(targets)
+            print(f"\nJ^L_Z:\n {J_lz.shape}", end="\n\n")
+            current_layer = self.output_layer
+            # print(f"Layer weights:\n {current_layer.weights}")
             # print(current_layer.activations, end="\n\n")
             J_hat_zw = current_layer.get_weight_jacobian()
-            print(f"J^Z_W:\n {J_hat_zw}", end="\n\n")
+            # print(f"J^Z_W:\n {J_hat_zw}", end="\n\n")
             # Finally get the jacobian matrix for the actual weights in the current layer
             J_lw = J_lz * J_hat_zw
             print(f"J^L_W:\n {J_lw}", end="\n\n")
             assert J_lw.shape == current_layer.weights.shape
             current_layer.update_weights(J_lw, self.lr)
             J_zy = current_layer.get_output_jacobian()
-            print(f"J^Z_Y:\n {J_zy}", end="\n\n")
-    
-    
-        
-
-
-
+            # print(f"J^Z_Y:\n {J_zy}", end="\n\n")
+            # Now start the actual backpropagation
+            for current_layer in reversed(self.hidden_layers):
+                J_lz = np.dot(J_lz, J_zy)
+                # break
+                # print(f"\nNext layer J^L_hidden layer:\n {J_lz}", end="\n\n")
+                # print(current_layer.activations, end="\n\n")
+                J_hat_zw = current_layer.get_weight_jacobian()
+                # print(f"J^Z_W:\n {J_hat_zw}", end="\n\n")
+                # Finally get the jacobian matrix for the actual weights in the current layer
+                J_lw = J_lz * J_hat_zw
+                print(f"J^L_W:\n {J_lw}", end="\n\n")
+                assert J_lw.shape == current_layer.weights.shape
+                current_layer.update_weights(J_lw, self.lr)
+                J_zy = current_layer.get_output_jacobian()
+                # print(f"J^Z_Y:\n {J_zy}", end="\n\n")
 
