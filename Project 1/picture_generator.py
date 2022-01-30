@@ -180,15 +180,16 @@ class PictureGenerator:
         Note: was run once for centered images, and another time for non-centered images.
         All images are 50x50 (but this can be changed by the input n)
         """
+        add = "_non" if not self.centered else ""
         for i in range(self.n_pictures):
             cross = self.generate_random_cross()
             circ = self.generate_random_circle()
             h_line = self.generate_random_horizontal_lines()
             v_line = self.generate_random_vertical_lines()
-            cross_path = f"./datasets/crosses_non_centered/cross_{i+1}.png"
-            circle_path = f"./datasets/circles_non_centered/circle_{i+1}.png"
-            h_line_path = f"./datasets/h_lines_non_centered/h_line_{i+1}.png"
-            v_line_path = f"./datasets/v_lines_non_centered/v_line_{i+1}.png"
+            cross_path = f"./datasets/crosses{add}_centered/cross_{i+1}.png"
+            circle_path = f"./datasets/circles{add}_centered/circle_{i+1}.png"
+            h_line_path = f"./datasets/h_lines{add}_centered/h_line_{i+1}.png"
+            v_line_path = f"./datasets/v_lines{add}_centered/v_line_{i+1}.png"
             self.save_img(cross, cross_path)
             self.save_img(circ, circle_path)
             self.save_img(h_line, h_line_path)
@@ -225,10 +226,10 @@ class PictureGenerator:
         num_valid_examples = int(np.ceil(self.valid_ratio * len(crosses)))
         num_test_examples = int(np.ceil(self.test_ratio * len(crosses)))
         shape_solutions = {
-            "cross": [1, 0, 0, 0],
-            "circle": [0, 1, 0, 0],
-            "h_line": [0, 0, 1, 0],
-            "v_line": [0, 0, 0, 1]
+            "cross": np.array([1, 0, 0, 0]).reshape(4,1),
+            "circle": np.array([0, 1, 0, 0]).reshape(4,1),
+            "h_line": np.array([0, 0, 1, 0]).reshape(4,1),
+            "v_line": np.array([0, 0, 0, 1]).reshape(4,1)
         }
         datasets = {
             "training": [],
@@ -255,13 +256,13 @@ class PictureGenerator:
             hl_fp = f"{h_lines_path}/{h_line}"
             vl_fp = f"{v_lines_path}/{v_line}"
             datasets[dataset].append(
-                np.where(np.array(Image.open(cr_fp)) == 0, 1, 0))
+                np.where(np.array(Image.open(cr_fp)) == 0, 1, 0).reshape(self.n ** 2, 1))
             datasets[dataset].append(
-                np.where(np.array(Image.open(cir_fp)) == 0, 1, 0))
+                np.where(np.array(Image.open(cir_fp)) == 0, 1, 0).reshape(self.n ** 2, 1))
             datasets[dataset].append(
-                np.where(np.array(Image.open(hl_fp)) == 0, 1, 0))
+                np.where(np.array(Image.open(hl_fp)) == 0, 1, 0).reshape(self.n ** 2, 1))
             datasets[dataset].append(
-                np.where(np.array(Image.open(vl_fp)) == 0, 1, 0))
+                np.where(np.array(Image.open(vl_fp)) == 0, 1, 0).reshape(self.n ** 2, 1))
             for _, shape_solution in shape_solutions.items():
                 datasets[f"{dataset}_targets"].append(shape_solution)
         return datasets
@@ -285,6 +286,13 @@ if __name__ == '__main__':
         "centered": False,
     }
     pg = PictureGenerator(**params)
-    data = pg.get_datasets()
-    for key, value in data.items():
-        print(f"{key}:\n {value[0]}")
+    pg.generate_datasets()
+
+    params = {
+        "n": 50,
+        "noise": 0.01,
+        "centered": True,
+    }
+    pg = PictureGenerator(**params)
+    pg.generate_datasets()
+

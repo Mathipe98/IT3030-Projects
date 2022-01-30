@@ -10,7 +10,6 @@ class Neuron():
 
     def draw(self, neuron_radius):
         circle = pyplot.Circle((self.x, self.y), radius=neuron_radius, fill=False)
-        print(self.label)
         pyplot.gca().add_patch(circle)
         pyplot.gca().annotate(self.label, xy=(self.x-.47, self.y-.32), fontsize=9)
 
