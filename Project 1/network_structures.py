@@ -7,39 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from nn_functions import d_cross_entropy, d_identity, d_mse, d_relu, d_sigmoid, d_tanh
-from picture_generator import PictureGenerator
-np.random.seed(123)
 
-x1 = 0.4
-x2 = 0.1
-x3 = 0.8
-
-y1 = 0.4
-y2 = 0.3
-
-z1 = 0.4
-
-X = np.array([x1,x2,x3]).reshape(3,1)
-Y = np.array([y1,y2]).reshape(2,1)
-Z = np.array([z1]).reshape(1,1)
-
-v11 = 0.1
-v12 = 0.2
-v21 = 0.5
-v22 = 0.4
-v31 = 0.3
-v32 = 0.2
-
-Y_weights = np.array([
-    [v11, v12],
-    [v21, v22],
-    [v31, v32]
-])
-
-w11 = 0.2
-w21 = 0.1
-
-Z_weights = np.array([w11, w21]).reshape(2,1)
 
 # Dict containing the mappings from functions to their derivatives
 function_map = {
@@ -93,9 +61,9 @@ class Layer:
         activations = self.a_func(output)
         # Check if we need to expand the dimensions of the results
         if len(activations.shape) == 1:
-            activations = activations[:,np.newaxis]
+            activations = activations[:, np.newaxis]
         if len(node_values.shape) == 1:
-            node_values = node_values[:,np.newaxis]
+            node_values = node_values[:, np.newaxis]
         # Now store the values for use in backprop
         self.activations, self.prv_layer_inputs = activations, node_values
         return activations
@@ -142,12 +110,12 @@ class Layer:
         """
         diag_J_sum = self.da_func(self.activations[:, column])
         # Return object corresponds to J-hat; einsum is outer product
-        return np.einsum('i,j->ij', self.prv_layer_inputs[:,column], diag_J_sum)
+        return np.einsum('i,j->ij', self.prv_layer_inputs[:, column], diag_J_sum)
 
     def update_weights(self, jacobian: np.ndarray, lr: float) -> None:
         assert jacobian.shape == self.weights.shape, "Jacobian weight matrix and weights are not the same shape"
         self.weights = self.weights - lr * jacobian
-    
+
     def __eq__(self, __o: object) -> bool:
         return np.all(self.weights == __o.weights)
 
@@ -166,6 +134,7 @@ class NeuralNetwork:
                 Integer describing the number of examples to operate on simultaneously
 
         """
+        debug: bool = config["Debug"]
         self.batch_size: int = config['Batch size']
         self.lr: float = config['Learning rate']
         self.inputs: int = config["Inputs"]
@@ -185,8 +154,8 @@ class NeuralNetwork:
             func = hl_funcs[i]
             d_func = function_map[func.__name__]
             w_shape = (n, m)
-            b_shape = (m,1)
-            weights = np.random.uniform(low=-0.1, high=0.1, size=w_shape)
+            b_shape = (m, 1)
+            weights = np.random.uniform(low=-0.1, high=0.1, size=w_shape) if not debug else np.ones(shape=w_shape)
             biases = np.zeros(shape=b_shape)
             self.hidden_layers.append(Layer(func, d_func, weights, biases))
             # Set the next n value for correct dimensions in the next weight matrix
@@ -195,8 +164,8 @@ class NeuralNetwork:
         output_func: Callable = config['Output function']
         d_output_func: Callable = function_map[output_func.__name__]
         w_shape = (n, m)
-        b_shape = (m,1)
-        weights = np.random.uniform(low=-0.1, high=0.1, size=w_shape)
+        b_shape = (m, 1)
+        weights = np.random.uniform(low=-0.1, high=0.1, size=w_shape) if not debug else np.ones(shape=w_shape)
         # weights = Z_weights
         biases = np.zeros(shape=b_shape)
         final_layer = Layer(output_func, d_output_func, weights, biases)
@@ -211,6 +180,9 @@ class NeuralNetwork:
             func, d_func = output_func, d_output_func
             self.output_layer = Layer(
                 func, d_func, weights, biases, softmax=True)
+        
+
+        self.debug_list = []
 
     def forward_pass(self, network_inputs: np.ndarray) -> None:
         # Get the first layer activations for use in the later layers
@@ -222,7 +194,7 @@ class NeuralNetwork:
 
     def get_loss_jacobian(self, targets: np.ndarray) -> np.ndarray:
         predictions = self.output_layer.activations
-        return self.dl_func(predictions, targets, self.output_layer.a_func.__name__=="sigmoid")
+        return self.dl_func(predictions, targets, self.output_layer.a_func.__name__ == "sigmoid")
 
     def backpropagation(self, targets: np.ndarray) -> None:
         # Debugging
@@ -236,11 +208,13 @@ class NeuralNetwork:
             first_layer = self.hidden_layers[-1]
         J_hat_zw = first_layer.get_J_hat_zw()
         # Finally get the jacobian matrix for the actual weights in the current layer
-        J_lw = J_lz.T * J_hat_zw
+        J_lw = J_hat_zw * J_lz.T
         # Debugging
         assert J_lw.shape == first_layer.weights.shape
-        first_layer.update_weights(J_lw, self.lr)
+        # Try to get the output jacobian BEFORE updating the weights
         J_zy = first_layer.get_output_jacobian()
+        first_layer.update_weights(J_lw, self.lr)
+        # J_zy = first_layer.get_output_jacobian()
         # Now propagate backwards through the hidden layers
         J_ly = np.dot(J_lz.T, J_zy)
         for current_layer in reversed(self.hidden_layers):
@@ -250,37 +224,45 @@ class NeuralNetwork:
             J_hat_yw = current_layer.get_J_hat_zw()
             J_lv = J_ly * J_hat_yw
             assert J_lv.shape == current_layer.weights.shape
-            current_layer.update_weights(J_lv, self.lr)
             J_yx = current_layer.get_output_jacobian()
+            current_layer.update_weights(J_lv, self.lr)
             J_ly = np.dot(J_ly, J_yx)
-    
+
     def train(self, training_data: List[np.ndarray], training_targets: List[np.ndarray]) -> None:
-        epochs = 10
+        epochs = 100
         # For some reason, storing np arrays in lists, and then getting them out from the list again
         # turns the arrays into lists. Sucks, but I gotta turn them back into arrays another time
-        assert len(training_data) == len(training_targets), "Training data and solutions must have same length"
-        assert np.array(training_data[0]).shape[0] == self.inputs, "Inputs to the network much match config parameter 'Inputs' (array shape does not match)"
+        assert len(training_data) == len(
+            training_targets), "Training data and solutions must have same length"
+        assert np.array(
+            training_data[0]).shape[0] == self.inputs, "Inputs to the network much match config parameter 'Inputs' (array shape does not match)"
         assert np.array(training_targets[0]).shape[0] == self.outputs
         for k in range(epochs):
             for i in range(len(training_data)):
                 inputs = np.array(training_data[i])
                 targets = np.array(training_targets[i])
                 self.forward_pass(inputs)
-                self.training_loss.append(self.l_func(self.output_layer.activations, targets))
+                loss = self.l_func(self.output_layer.activations, targets)
+                if loss >= 0.4:
+                    self.debug_list.append(targets)
+                if i == 0 and k == 0:
+                    self.training_loss.append(loss)
                 self.backpropagation(targets)
             if (k+1) % int(epochs * 0.1) == 0:
                 print(f"Progress: {int((k+1)/epochs * 100)}%")
-    
+            self.training_loss.append(loss)
+
     def predict(self, example: np.ndarray) -> np.ndarray:
         assert example.shape[0] == self.inputs, "Cannot predict data that doesn't match input shape"
         self.forward_pass(example)
+        print(f"Output layer function: {self.output_layer.a_func.__name__}")
         return self.output_layer.activations
-    
+
     def visualize_training_losses(self) -> None:
         x_axis = range(0, len(self.training_loss))
         plt.plot(x_axis, self.training_loss)
-        plt.xlabel("Training examples")
-        plt.ylabel("Loss (Error; MSE)")
+        plt.xlabel("Epochs")
+        plt.ylabel("Loss (MSE)")
         plt.savefig('./Figures/TRAINING_LOSS_FIRST_ATTEMPT.png')
         plt.show()
 

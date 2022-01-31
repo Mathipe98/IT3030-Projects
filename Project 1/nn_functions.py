@@ -8,7 +8,7 @@ def sigmoid(input_vector: np.ndarray) -> np.ndarray:
     Sigmoid activation function, rest of docstring unnecessary seeing as it
     becomes larger than the function itself.
     """
-    return 1 / (1 + np.exp(input_vector))
+    return 1 / (1 + np.exp(-input_vector))
 
 
 def relu(input_vector: np.ndarray) -> np.ndarray:
@@ -89,29 +89,33 @@ def cross_entropy(predictions: np.ndarray, targets: np.ndarray, sigmoid: bool = 
         float: Array of cross-entropy loss of all predictions compared to target
     """
     assert predictions.shape == targets.shape, "Predictions and targets must have same shapes"
-    # f(x) = 1 - x
-    # Formula: log(predictions) * targets + f(predictions) * f(targets)
-    # Function that returns array with 1 - x for all elements x
-    def f(x): return 1 - x
-    # Tweak the input array just to assure we don't perform log(0)
     epsilon = 1e-12
-    predictions = np.clip(predictions, epsilon, 1-epsilon)
-    # If sigmoid -> binary values are 0.9 and 0.1
-    if sigmoid:
-        targets = np.clip(targets, 0.1, 0.9)
+    def safe_log(x): return 0 if x == 0 else np.log(x)
+    # # If sigmoid -> binary values are 0.9 and 0.1
+    # if sigmoid:
+    #     targets = np.clip(targets, 0.1, 0.9)
     # If our input is 1-dimensional:
     if len(predictions.shape) == 1:
         # Make the vectors 2D to work with einsum in the same way as SGD
         predictions = predictions.reshape(-1, 1)
-        targets = predictions.reshape(-1, 1)
-    # Note: einsum corresponds to column-wise dot product, so it's like extracting columns 2-and-2 and calculating the dot product between each pair
-    return np.einsum('ij,ij->j', np.log(predictions), targets) + np.einsum('ij,ij->j', np.log(f(predictions)), f(targets))
+        targets = targets.reshape(-1, 1)
+    predictions = np.clip(predictions, epsilon, 1. - epsilon)
+    loss = 0
+    for col in range(predictions.shape[0]):
+        for row in range(predictions.shape[1]):
+            predicted_value = predictions[col][row]
+            target_value = targets[col][row]
+            v1 = target_value * safe_log(predicted_value)
+            v2 = (1-target_value) * safe_log(1-predicted_value)
+            loss += v1 + v2
+    return -loss/predictions.shape[1]
+    
 
 
 def mse(predictions: np.ndarray, targets: np.ndarray, sigmoid: bool = False) -> np.ndarray:
     if sigmoid:
         targets = np.clip(targets, 0.1, 0.9)
-    return np.square(np.subtract(predictions, targets)).mean()
+    return np.mean(np.power(predictions-targets, 2))
 
 # And now the corresponding derivatives
 
@@ -133,12 +137,18 @@ def d_cross_entropy(predictions: np.ndarray, targets: np.ndarray, sigmoid: bool 
     # Again we need to clip in order to resist divide by 0 shenanigans
     epsilon = 1e-12
     predictions = np.clip(predictions, epsilon, 1-epsilon)
-    if sigmoid:
-        targets = np.clip(targets, 0.1, 0.9)
+    targets = np.clip(targets, epsilon, 1-epsilon)
+    # if sigmoid:
+    #     targets = np.clip(targets, 0.1, 0.9)
     return - (targets / predictions) + (func(targets) / func(predictions))
 
 
 def d_mse(predictions: np.ndarray, targets: np.ndarray, sigmoid: bool = False) -> np.ndarray:
     if sigmoid:
         targets = np.clip(targets, 0.1, 0.9)
-    return (predictions - targets) * 2/3
+    return (predictions - targets) * 2/predictions.shape[0]
+
+if __name__ == "__main__":
+    pred = np.array([0, 1, 1, 0]).reshape(4,1)
+    true = np.array([0, 0, 1, 0]).reshape(4,1)
+    print(cross_entropy(pred, true, True))
