@@ -12,17 +12,17 @@ outputs = 4
 inputs = 900
 lr = 0.01
 wreg = L2
-wreg_lr = 0.001
+wreg_lr = 0.0
 epochs = 100
 l_func = cross_entropy
 use_softmax = True
 verbose = True
 
 [LAYERS]
-n_hl = 2
-hl_neurons = [20, 10]
-hl_funcs = ["relu", "tanh"]
-hl_wranges = [(-0.1, 0.1), (-0.1, 0.1), (-0.1, 0.1), (-0.1, 0.1), (-0.1, 0.1)]
+n_hl = 0
+hl_neurons = []
+hl_funcs = []
+hl_wranges = []
 output_func = sigmoid
 output_wrange = (-0.1, 0.1)
 

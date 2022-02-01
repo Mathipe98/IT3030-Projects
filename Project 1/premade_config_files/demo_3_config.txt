@@ -5,32 +5,31 @@ CompressionLevel = 9
 ForwardX11 = yes
 
 [IMMUTABLE]
-# Input immutable right now; ask for how to compress 2D array
 outputs = 4
 
 [GLOBALS]
-inputs = 900
+inputs = 400
 lr = 0.01
-wreg = L2
+wreg = L1
 wreg_lr = 0.001
 epochs = 100
 l_func = cross_entropy
-use_softmax = True
-verbose = True
+use_softmax = False
+verbose = False
 
 [LAYERS]
-n_hl = 2
-hl_neurons = [20, 10]
-hl_funcs = ["relu", "tanh"]
+n_hl = 5
+hl_neurons = [50, 10, 25, 8, 2]
+hl_funcs = ["relu", "relu", "relu", "relu", "relu"]
 hl_wranges = [(-0.1, 0.1), (-0.1, 0.1), (-0.1, 0.1), (-0.1, 0.1), (-0.1, 0.1)]
 output_func = sigmoid
 output_wrange = (-0.1, 0.1)
 
 [DATA]
-n = 30
+n = 20
 noise = 0.1
 data_split = (0.7, 0.2, 0.1)
 centered = False
-n_pictures = 715
-generate_realtime = False
+n_pictures = 143
+generate_realtime = True
 verbose = True

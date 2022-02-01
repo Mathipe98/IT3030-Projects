@@ -19,6 +19,7 @@ def create_circular_mask(h, w, center=None, radius=None):
 
     Y, X = np.ogrid[:h, :w]
     dist_from_center = np.sqrt((X - center[0])**2 + (Y-center[1])**2)
+    # Create a randomized bound to vary the thickness of the circle
     circle_limit = np.random.choice(
         [0.8, 0.9, 1.1, 1.2], p=[0.25, 0.25, 0.25, 0.25])
     mask = (dist_from_center <= radius +
@@ -32,11 +33,22 @@ class PictureGenerator:
     index will signify a black dot (i.e. part of figure), and a 0 will be a white dot.
     """
 
-    def __init__(self, n: int = 30, noise: float = 0.05, data_split: Tuple = (0.7, 0.2, 0.1),
-                 n_pictures: int = 1000, centered: bool = True) -> None:
-        assert 10 <= n <= 50, "Picture dimensions n must be 10 <= n <= 50"
-        assert round(sum(data_split),
-                     8) == 1, "Dataset partitions must sum to 1"
+    def __init__(self, n: int = 30, noise: float = 0.05,
+                 data_split: Tuple = (0.7, 0.2, 0.1),
+                 centered: bool = True, n_pictures: int = 100,
+                 generate_realtime: bool = False, verbose: bool = True) -> None:
+        """Constructor for necessary parameters for picture generation.
+
+        Args:
+            n (int, optional): Size of the randomized picture. Defaults to 30.
+            noise (float, optional): Percentage of randomization in the picture. Defaults to 0.05.
+            data_split (Tuple, optional): The split between training, validation, and testing. Defaults to (0.7, 0.2, 0.1).
+            centered (bool, optional): Whether or not pictures should be centered. Defaults to True.
+            n_pictures (int, optional): Number of pictures to generate/extract in TOTAL. Defaults to 100.
+            generate_realtime (bool, optional): Whether or not to generate pictures realtime, or fetch from local directory. Defaults to False.
+            verbose (bool, optional): Whether or not to include additional print statements. Defaults to True.
+        """
+        assert round(sum(data_split),8) == 1, "Dataset partitions must sum to 1"
         self.n = n
         self.noise = noise
         self.centered = centered
@@ -44,6 +56,8 @@ class PictureGenerator:
         self.valid_ratio = data_split[1]
         self.test_ratio = data_split[2]
         self.n_pictures = n_pictures
+        self.generate_realtime = generate_realtime
+        self.verbose = verbose
 
     def generate_random_cross(self) -> np.ndarray:
         """Method that will generate an n x n array, where n is the given parameter
@@ -151,9 +165,18 @@ class PictureGenerator:
         return small_section
 
     def generate_noise(self, img: np.ndarray) -> np.ndarray:
+        """This method takes in a 2D image and generates noise in it according
+        to the noise-parameter from the config file.
+
+        Args:
+            img (np.ndarray): 2D array of pixel values
+
+        Returns:
+            np.ndarray: Slightly altered input array with more noise/randomization/entropy
+        """
         # Create a random variable that will determine if we randomize one pixel at a time
         # The probability is taken from the noise parameter
-        p = [1-self.noise * 10, self.noise * 10]
+        p = [1-self.noise, self.noise]
         for i in range(img.shape[0]):
             for j in range(img.shape[1]):
                 current_pixel_value = img[i][j]
@@ -172,13 +195,12 @@ class PictureGenerator:
                         img[i][j] = 1
         return img
 
-    def generate_datasets(self) -> None:
-        """Method for generating all the necessary datasets.
-        Takes a while to run, so it will just be run once to save all files,
-        such that the files can be read from memory rather than created on the fly.
+    def write_datasets(self, path: str) -> None:
+        """Method that generates and writes randomized pictures of shapes to
+        a local directory
 
-        Note: was run once for centered images, and another time for non-centered images.
-        All images are 50x50 (but this can be changed by the input n)
+        Args:
+            path (str): Folder name inside the 'datasets' directory in which to store files
         """
         add = "_non" if not self.centered else ""
         for i in range(self.n_pictures):
@@ -186,51 +208,40 @@ class PictureGenerator:
             circ = self.generate_random_circle()
             h_line = self.generate_random_horizontal_lines()
             v_line = self.generate_random_vertical_lines()
-            cross_path = f"./datasets/crosses{add}_centered/cross_{i+1}.png"
-            circle_path = f"./datasets/circles{add}_centered/circle_{i+1}.png"
-            h_line_path = f"./datasets/h_lines{add}_centered/h_line_{i+1}.png"
-            v_line_path = f"./datasets/v_lines{add}_centered/v_line_{i+1}.png"
+            cross_path = f"./datasets/{path}/crosses{add}_centered/cross_{i+1}.png"
+            circle_path = f"./datasets/{path}/circles{add}_centered/circle_{i+1}.png"
+            h_line_path = f"./datasets/{path}/h_lines{add}_centered/h_line_{i+1}.png"
+            v_line_path = f"./datasets/{path}/v_lines{add}_centered/v_line_{i+1}.png"
             self.save_img(cross, cross_path)
             self.save_img(circ, circle_path)
             self.save_img(h_line, h_line_path)
             self.save_img(v_line, v_line_path)
-            if i % 50 == 0:
-                print(i)
-
-    def show_img(self, img: np.ndarray) -> None:
-        # Creates PIL image
-        img = Image.fromarray(np.uint8(255 - img * 255), 'L')
-        img = img.resize((500, 500), Image.NEAREST)
-        img.show()
-
-    def save_img(self, img: np.ndarray, path: str) -> None:
-        img = Image.fromarray(np.uint8(255 - img * 255), 'L')
-        # img = img.resize((500, 500), Image.NEAREST)
-        img.save(path)
+            if (i+1) % self.n_pictures // 10 == 0 and self.verbose:
+                print(f"Writing datasets.. {(i+1)*10}% complete")
+        print(f"Writing datasets.. 100% complete")
 
     def get_datasets(self) -> Dict:
-        crosses_path = './datasets/crosses_centered' if self.centered else './datasets/crosses_non_centered'
-        crosses = [f for f in listdir(
-            crosses_path) if isfile(join(crosses_path, f))]
-        circles_path = './datasets/circles_centered' if self.centered else './datasets/circles_non_centered'
-        circles = [f for f in listdir(
-            circles_path) if isfile(join(circles_path, f))]
-        h_lines_path = './datasets/h_lines_centered' if self.centered else './datasets/h_lines_non_centered'
-        h_lines = [f for f in listdir(
-            h_lines_path) if isfile(join(h_lines_path, f))]
-        v_lines_path = './datasets/v_lines_centered' if self.centered else './datasets/v_lines_non_centered'
-        v_lines = [f for f in listdir(
-            v_lines_path) if isfile(join(v_lines_path, f))]
-        num_training_examples = int(
-            np.ceil(self.training_ratio * len(crosses)))
-        num_valid_examples = int(np.ceil(self.valid_ratio * len(crosses)))
-        num_test_examples = int(np.ceil(self.test_ratio * len(crosses)))
-        shape_solutions = {
-            "cross": np.array([1, 0, 0, 0]).reshape(4,1),
-            "circle": np.array([0, 1, 0, 0]).reshape(4,1),
-            "h_line": np.array([0, 0, 1, 0]).reshape(4,1),
-            "v_line": np.array([0, 0, 0, 1]).reshape(4,1)
-        }
+        """Generic function for retrieving datasets.
+        Only delegates further down the chain, but checks whether or not
+        to fetch from files, or generate on the fly
+
+        Returns:
+            Dict: Dictionary containing the necessary datasets
+        """
+        if self.generate_realtime:
+            if self.verbose:
+                print("Fetching datasets realtime...")
+            return self.get_datasets_realtime()
+        if self.verbose:
+            print("Fetching datasets from directory...")
+        return self.get_datasets_from_directory()
+
+    def get_datasets_realtime(self) -> Dict:
+        """Method that generates datasets during runtime
+
+        Returns:
+            Dict: Dictionary containing the necessary datasets
+        """
         datasets = {
             "training": [],
             "training_targets": [],
@@ -239,11 +250,86 @@ class PictureGenerator:
             "testing": [],
             "testing_targets": []
         }
+        shape_solutions = {
+            "cross": np.array([1, 0, 0, 0]).reshape(4, 1),
+            "circle": np.array([0, 1, 0, 0]).reshape(4, 1),
+            "h_line": np.array([0, 0, 1, 0]).reshape(4, 1),
+            "v_line": np.array([0, 0, 0, 1]).reshape(4, 1)
+        }
+        num_training_examples = int(
+            np.ceil(self.training_ratio * self.n_pictures) // 4)
+        num_valid_examples = int(np.ceil(self.valid_ratio * self.n_pictures) // 4)
+        num_test_examples = int(np.ceil(self.test_ratio * self.n_pictures) // 4)
+        if self.verbose:
+            print(f"N train examples:\t {num_training_examples*4}\nN valid examples:\t {num_valid_examples*4}\nN test examples:\t {(num_test_examples+1)*4}")
         for i in range(num_training_examples + num_valid_examples
-                       + num_test_examples):
-            if i < num_training_examples:
+                       + num_test_examples + 1):
+            if i <= num_training_examples - 1:
                 dataset = "training"
-            elif i < num_training_examples + num_valid_examples:
+            elif i <= (num_training_examples + num_valid_examples) - 1:
+                dataset = "validation"
+            else:
+                dataset = "testing"
+            cross = self.generate_random_cross()
+            circ = self.generate_random_circle()
+            h_line = self.generate_random_horizontal_lines()
+            v_line = self.generate_random_vertical_lines()
+            datasets[dataset].append(
+                np.where(cross == 0, 1, 0).reshape(self.n ** 2, 1))
+            datasets[dataset].append(
+                np.where(circ == 0, 1, 0).reshape(self.n ** 2, 1))
+            datasets[dataset].append(
+                np.where(h_line == 0, 1, 0).reshape(self.n ** 2, 1))
+            datasets[dataset].append(
+                np.where(v_line == 0, 1, 0).reshape(self.n ** 2, 1))
+            for _, shape_solution in shape_solutions.items():
+                datasets[f"{dataset}_targets"].append(shape_solution)
+        return datasets
+
+    def get_datasets_from_directory(self) -> Dict:
+        """Method that retrieves the necessary datasets from memory
+        (file storage), rather than producing during code-execution.
+
+        Returns:
+            Dict: Dictionary containing the necessary datasets
+        """
+        datasets = {
+            "training": [],
+            "training_targets": [],
+            "validation": [],
+            "validation_targets": [],
+            "testing": [],
+            "testing_targets": []
+        }
+        shape_solutions = {
+            "cross": np.array([1, 0, 0, 0]).reshape(4, 1),
+            "circle": np.array([0, 1, 0, 0]).reshape(4, 1),
+            "h_line": np.array([0, 0, 1, 0]).reshape(4, 1),
+            "v_line": np.array([0, 0, 0, 1]).reshape(4, 1)
+        }
+        crosses_path = './datasets/pregenerated/crosses_centered' if self.centered else './datasets/pregenerated/crosses_non_centered'
+        crosses = [f for f in listdir(
+            crosses_path) if isfile(join(crosses_path, f))]
+        circles_path = './datasets/pregenerated/circles_centered' if self.centered else './datasets/pregenerated/circles_non_centered'
+        circles = [f for f in listdir(
+            circles_path) if isfile(join(circles_path, f))]
+        h_lines_path = './datasets/pregenerated/h_lines_centered' if self.centered else './datasets/pregenerated/h_lines_non_centered'
+        h_lines = [f for f in listdir(
+            h_lines_path) if isfile(join(h_lines_path, f))]
+        v_lines_path = './datasets/pregenerated/v_lines_centered' if self.centered else './datasets/pregenerated/v_lines_non_centered'
+        v_lines = [f for f in listdir(
+            v_lines_path) if isfile(join(v_lines_path, f))]
+        num_training_examples = int(
+            np.ceil(self.training_ratio * self.n_pictures) // 4)
+        num_valid_examples = int(np.ceil(self.valid_ratio * self.n_pictures) // 4)
+        num_test_examples = int(np.ceil(self.test_ratio * self.n_pictures) // 4)
+        if self.verbose:
+            print(f"N train examples:\t {num_training_examples*4}\nN valid examples:\t {num_valid_examples*4}\nN test examples:\t {(num_test_examples+1)*4}")
+        for i in range(num_training_examples + num_valid_examples
+                       + num_test_examples + 1):
+            if i <= num_training_examples - 1:
+                dataset = "training"
+            elif i <= (num_training_examples + num_valid_examples) - 1:
                 dataset = "validation"
             else:
                 dataset = "testing"
@@ -266,33 +352,26 @@ class PictureGenerator:
             for _, shape_solution in shape_solutions.items():
                 datasets[f"{dataset}_targets"].append(shape_solution)
         return datasets
-        
 
+    def show_img(self, img: np.ndarray) -> None:
+        """Method that upscales and shows an arbitrary 2D matrix image
 
-def generate_new_dataset() -> None:
-    params = {
-        "n": 50,
-        "noise": 0.02,
-        "centered": False,
-    }
-    generator = PictureGenerator(**params)
-    generator.generate_datasets()
+        Args:
+            img (np.ndarray): 2D matrix that one wants to visualize
+        """
+        # Creates PIL image
+        img = Image.fromarray(np.uint8(255 - img * 255), 'L')
+        img = img.resize((500, 500), Image.NEAREST)
+        img.show()
 
+    def save_img(self, img: np.ndarray, path: str) -> None:
+        """Method that saves a given image in the form of a 2D
+        matrix to a provided path
 
-if __name__ == '__main__':
-    params = {
-        "n": 50,
-        "noise": 0.02,
-        "centered": False,
-    }
-    pg = PictureGenerator(**params)
-    pg.generate_datasets()
-
-    params = {
-        "n": 50,
-        "noise": 0.01,
-        "centered": True,
-    }
-    pg = PictureGenerator(**params)
-    pg.generate_datasets()
-
+        Args:
+            img (np.ndarray): 2D matrix in question
+            path (str): Local path in which to save the image
+        """
+        img = Image.fromarray(np.uint8(255 - img * 255), 'L')
+        # img = img.resize((500, 500), Image.NEAREST)
+        img.save(path)
