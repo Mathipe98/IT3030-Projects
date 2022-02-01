@@ -1,0 +1,23 @@
+[DEFAULT]
+ServerAliveInterval = 45
+Compression = yes
+CompressionLevel = 9
+ForwardX11 = yes
+
+[IMMUTABLE]
+# Input immutable right now; ask for how to compress 2D array
+inputs = 2500
+outputs = 4
+
+[GLOBALS]
+lr = 0.01
+wreg = L2
+wreg_lr = 0.001
+l_func = cross_entropy
+softmax = False
+
+[LAYERS]
+n_hl = 2
+hl_neurons = [20, 10]
+hl_funcs = ["relu", "tanh"]
+output_func = sigmoid

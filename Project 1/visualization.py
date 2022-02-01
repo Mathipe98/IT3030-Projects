@@ -111,6 +111,15 @@ class DrawNN():
         network.layers = list(reversed(network.layers))
         network.draw()
 
+
+def draw_network(network: NeuralNetwork) -> None:
+    nodes = [network.inputs]
+    for layer in network.hidden_layers:
+        nodes.append(layer.n_nodes)
+    nodes.append(network.output_layer.n_nodes)
+    network_vis = DrawNN(nodes)
+    network_vis.draw()
+
 if __name__ == "__main__":
     network = DrawNN( [4,8,8,1] )
     network.draw()

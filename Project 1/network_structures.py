@@ -29,7 +29,7 @@ class Layer:
 
     def __init__(self, a_func: Callable, da_func: Callable,
                  weights: np.ndarray, biases: np.ndarray,
-                 softmax: bool = False) -> None:
+                 softmax: bool = False, is_final_layer: bool = False) -> None:
         self.a_func = a_func
         self.da_func = da_func
         self.weights = weights
@@ -40,6 +40,7 @@ class Layer:
         self.activations = None
         self.prv_layer_inputs = None
         self.softmax = softmax
+        self.is_final_layer = is_final_layer
 
     def calculate_input(self, node_values: np.ndarray) -> np.ndarray:
         """
@@ -57,7 +58,7 @@ class Layer:
         output = np.einsum('ij...,j...->i...', self.weights.T, node_values)
         # Now add the bias to the output
         output = output + self.biases
-        # Pass the result into the activation function, and return it
+        # Pass the result into the activation function
         activations = self.a_func(output)
         # Check if we need to expand the dimensions of the results
         if len(activations.shape) == 1:
@@ -112,9 +113,29 @@ class Layer:
         # Return object corresponds to J-hat; einsum is outer product
         return np.einsum('i,j->ij', self.prv_layer_inputs[:, column], diag_J_sum)
 
+    def get_bias_jacobian(self, J_lz: np.ndarray) -> np.ndarray:
+        """This method will return a vector with values to update the weights
+        from the bias node in the previous layer.
+        Since derivatives of the biases are always 1, this will simply correspond
+        to multiplying the J_lz matrix by a column vector of 1's.
+        This is simply summing the rows of the original matrix
+
+        Args:
+            J_lz (np.ndarray): The jacobian matrix containing the derivatives of the loss
+            w.r.t. the output
+
+        Returns:
+            np.ndarray: A vector of derivatives of the loss w.r.t. the biases
+        """
+        return np.einsum('ij->i', J_lz).reshape(J_lz.shape[0], 1)
+
     def update_weights(self, jacobian: np.ndarray, lr: float) -> None:
         assert jacobian.shape == self.weights.shape, "Jacobian weight matrix and weights are not the same shape"
         self.weights = self.weights - lr * jacobian
+
+    def update_biases(self, jacobian: np.ndarray, lr: float) -> None:
+        assert jacobian.shape == self.biases.shape
+        self.biases = self.biases - lr * jacobian
 
     def __eq__(self, __o: object) -> bool:
         return np.all(self.weights == __o.weights)
@@ -122,7 +143,11 @@ class Layer:
 
 class NeuralNetwork:
 
-    def __init__(self, config: Dict) -> None:
+    def __init__(self, inputs: int, outputs: int, lr: float,
+                 wreg: str, wreg_lr: float,
+                 n_hl: int, hl_neurons: List,
+                 hl_funcs: List, output_func: Callable,
+                 l_func: Callable, softmax: bool = False) -> None:
         """
         Taking in parameters for neural network.
 
@@ -134,20 +159,20 @@ class NeuralNetwork:
                 Integer describing the number of examples to operate on simultaneously
 
         """
-        debug: bool = config["Debug"]
-        self.batch_size: int = config['Batch size']
-        self.lr: float = config['Learning rate']
-        self.inputs: int = config["Inputs"]
-        self.outputs: int = config["Outputs"]
-        self.training_loss: List[float] = []
-        self.hidden_layers: List[Layer] = []
-        n_hl: int = config['Hidden layers']
-        hl_neurons: List[int] = config['HL Neurons']
-        hl_funcs: List[Callable] = config['HL Activation functions']
-        self.l_func: Callable = config['Loss function']
+        self.inputs = inputs
+        self.outputs = outputs
+        self.lr = lr
+        self.wreg = wreg
+        self.wreg_func: Callable = self.L1_reg if wreg == 'L1' else self.L2_reg
+        self.wreg_lr = wreg_lr
+        n_hl = n_hl
+        hl_neurons = hl_neurons
+        hl_funcs = hl_funcs
+        self.l_func = l_func
         self.dl_func: Callable = function_map[self.l_func.__name__]
         # Weights: nxm, m current, n previous
         n = self.inputs
+        self.hidden_layers: List[Layer] = []
         for i in range(n_hl):
             # Nodes in the current hidden layer
             m = hl_neurons[i]
@@ -155,18 +180,16 @@ class NeuralNetwork:
             d_func = function_map[func.__name__]
             w_shape = (n, m)
             b_shape = (m, 1)
-            weights = np.random.uniform(low=-0.1, high=0.1, size=w_shape) if not debug else np.ones(shape=w_shape)
+            weights = np.random.uniform(low=-0.1, high=0.1, size=w_shape)
             biases = np.zeros(shape=b_shape)
             self.hidden_layers.append(Layer(func, d_func, weights, biases))
             # Set the next n value for correct dimensions in the next weight matrix
             n = m
-        m: int = config['Outputs']
-        output_func: Callable = config['Output function']
+        m: int = outputs
         d_output_func: Callable = function_map[output_func.__name__]
         w_shape = (n, m)
         b_shape = (m, 1)
-        weights = np.random.uniform(low=-0.1, high=0.1, size=w_shape) if not debug else np.ones(shape=w_shape)
-        # weights = Z_weights
+        weights = np.random.uniform(low=-0.1, high=0.1, size=w_shape)
         biases = np.zeros(shape=b_shape)
         final_layer = Layer(output_func, d_output_func, weights, biases)
         # If we use softmax, then treat the output layer as a hidden layer, and add a final layer
@@ -180,9 +203,23 @@ class NeuralNetwork:
             func, d_func = output_func, d_output_func
             self.output_layer = Layer(
                 func, d_func, weights, biases, softmax=True)
-        
+        self.training_loss: List[float] = []
 
-        self.debug_list = []
+    
+    def L1_reg(self) -> float:
+        total = 0
+        total += np.sum(self.output_layer.weights)
+        for layer in self.hidden_layers:
+            total += np.sum(layer.weights)
+        return total
+
+    
+    def L2_reg(self) -> float:
+        total = 0
+        total += np.sum(self.output_layer.weights ** 2)
+        for layer in self.hidden_layers:
+            total += np.sum(layer.weights ** 2)
+        return 1/2 * total
 
     def forward_pass(self, network_inputs: np.ndarray) -> None:
         # Get the first layer activations for use in the later layers
@@ -191,10 +228,6 @@ class NeuralNetwork:
         for layer in self.hidden_layers:
             current_input = layer.calculate_input(current_input)
         self.output_layer.calculate_input(current_input)
-
-    def get_loss_jacobian(self, targets: np.ndarray) -> np.ndarray:
-        predictions = self.output_layer.activations
-        return self.dl_func(predictions, targets, self.output_layer.a_func.__name__ == "sigmoid")
 
     def backpropagation(self, targets: np.ndarray) -> None:
         # Debugging
@@ -209,12 +242,19 @@ class NeuralNetwork:
         J_hat_zw = first_layer.get_J_hat_zw()
         # Finally get the jacobian matrix for the actual weights in the current layer
         J_lw = J_hat_zw * J_lz.T
+        # Now take regularization into account
+        if self.wreg == 'L1':
+            J_lw = J_lw + self.wreg_lr * np.sign(first_layer.weights)
+        else:
+            J_lw = J_lw + self.wreg_lr * first_layer.weights
+        # Simultaneously, get the jacobian matrix for the biases
+        J_lb = first_layer.get_bias_jacobian(J_lz)
         # Debugging
         assert J_lw.shape == first_layer.weights.shape
         # Try to get the output jacobian BEFORE updating the weights
         J_zy = first_layer.get_output_jacobian()
         first_layer.update_weights(J_lw, self.lr)
-        # J_zy = first_layer.get_output_jacobian()
+        first_layer.update_biases(J_lb, self.lr)
         # Now propagate backwards through the hidden layers
         J_ly = np.dot(J_lz.T, J_zy)
         for current_layer in reversed(self.hidden_layers):
@@ -223,10 +263,20 @@ class NeuralNetwork:
                 continue
             J_hat_yw = current_layer.get_J_hat_zw()
             J_lv = J_ly * J_hat_yw
+            if self.wreg == 'L1':
+                J_lv = J_lv + self.wreg_lr * np.sign(current_layer.weights)
+            else:
+                J_lv = J_lv + self.wreg_lr * current_layer.weights
+            J_lb = first_layer.get_bias_jacobian(J_ly.T)
             assert J_lv.shape == current_layer.weights.shape
             J_yx = current_layer.get_output_jacobian()
             current_layer.update_weights(J_lv, self.lr)
+            current_layer.update_biases(J_lb, self.lr)
             J_ly = np.dot(J_ly, J_yx)
+
+    def get_loss_jacobian(self, targets: np.ndarray) -> np.ndarray:
+        predictions = self.output_layer.activations
+        return self.dl_func(predictions, targets, self.output_layer.a_func.__name__ == "sigmoid")
 
     def train(self, training_data: List[np.ndarray], training_targets: List[np.ndarray]) -> None:
         epochs = 100
@@ -242,9 +292,7 @@ class NeuralNetwork:
                 inputs = np.array(training_data[i])
                 targets = np.array(training_targets[i])
                 self.forward_pass(inputs)
-                loss = self.l_func(self.output_layer.activations, targets)
-                if loss >= 0.4:
-                    self.debug_list.append(targets)
+                loss = self.l_func(self.output_layer.activations, targets) + self.wreg_lr * self.wreg_func()
                 if i == 0 and k == 0:
                     self.training_loss.append(loss)
                 self.backpropagation(targets)

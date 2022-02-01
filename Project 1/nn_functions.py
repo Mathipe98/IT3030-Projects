@@ -54,7 +54,7 @@ def d_tanh(input_vector: np.ndarray) -> np.ndarray:
     """
     Tanh derivative = 1 - tanh^2
     """
-    def f(x): return 1 - x ^ 2
+    def f(x): return 1 - x ** 2
     return f(input_vector)
 
 
