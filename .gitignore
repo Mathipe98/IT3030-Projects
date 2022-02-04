@@ -133,3 +133,4 @@ dmypy.json
 *venv
 
 Project 1/datasets
+*.zip
