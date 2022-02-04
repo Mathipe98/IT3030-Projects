@@ -423,11 +423,11 @@ class NeuralNetwork:
         self.validation_loss.append(total / len(validation_data))
     
     def calculate_testing_loss(self, testing_data: List[np.ndarray], testing_targets: List[np.ndarray]) -> None:
-        """Method for calculating the average loss on the validation set during an epoch.
+        """Method for calculating the average loss on the testing set during an epoch.
 
         Args:
-            testing_data (List[np.ndarray]): Array of validation inputs
-            testing_targets (List[np.ndarray]): Array of validation solutions
+            testing_data (List[np.ndarray]): Array of testing inputs
+            testing_targets (List[np.ndarray]): Array of testing solutions
         """
         for i in range(len(testing_data)):
             inputs = testing_data[i]
@@ -438,7 +438,7 @@ class NeuralNetwork:
 
     def visualize_losses(self) -> None:
         """Method for visualizing the various calculated losses during the main training
-        cycle. Visualizes training loss, validation loss, and training loss.
+        cycle. Visualizes training loss, validation loss, and testing loss.
         (Also saves the figures to local directory.)
         """
         x_axis = range(0, self.epochs)
@@ -479,6 +479,3 @@ class NeuralNetwork:
         plt.title("Neural Network classification on testing data")
         plt.savefig("./Figures/Network_accuracy.png")
         plt.show()
-
-
-# IM FUCKING DONEREILKJHSADFH 9USDZ F9SDZG F98OYDSZB GF8O7DSZG79PFEWSA G87OFEWASDB
