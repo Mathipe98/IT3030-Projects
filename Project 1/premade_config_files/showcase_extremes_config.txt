@@ -22,9 +22,9 @@ verbose = True
 n_hl = 5
 hl_neurons = [1000, 100, 1, 20, 10]
 hl_funcs = ["relu", "tanh", "sigmoid", "identity", "relu"]
-hl_wranges = [(-0.1, 0.1), (-0.1, 0.1), (-0.1, 0.1), (-0.1, 0.1), (-0.1, 0.1)]
+hl_wranges = [(-100, 100), (-0.1, 0.1), (-0.1, 0.1), (-0.1, 0.1), (-0.1, 0.1)]
 output_func = sigmoid
-output_wrange = (-0.1, 0.1)
+output_wrange = (-100, 100)
 
 [DATA]
 n = 10

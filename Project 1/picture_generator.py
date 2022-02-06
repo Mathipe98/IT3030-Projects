@@ -36,7 +36,8 @@ class PictureGenerator:
     def __init__(self, n: int = 30, noise: float = 0.05,
                  data_split: Tuple = (0.7, 0.2, 0.1),
                  centered: bool = True, n_pictures: int = 100,
-                 generate_realtime: bool = False, verbose: bool = True) -> None:
+                 generate_realtime: bool = False, verbose: bool = True,
+                 flatten: bool=False) -> None:
         """Constructor for necessary parameters for picture generation.
 
         Args:
@@ -47,6 +48,7 @@ class PictureGenerator:
             n_pictures (int, optional): Number of pictures to generate/extract in TOTAL. Defaults to 100.
             generate_realtime (bool, optional): Whether or not to generate pictures realtime, or fetch from local directory. Defaults to False.
             verbose (bool, optional): Whether or not to include additional print statements. Defaults to True.
+            flatten (bool, optional): Whether or not to flatten image arrays. Defaults to False.
         """
         assert round(sum(data_split),8) == 1, "Dataset partitions must sum to 1"
         self.n = n
@@ -58,6 +60,7 @@ class PictureGenerator:
         self.n_pictures = n_pictures
         self.generate_realtime = generate_realtime
         self.verbose = verbose
+        self.flatten = flatten
 
     def generate_random_cross(self) -> np.ndarray:
         """Method that will generate an n x n array, where n is the given parameter
@@ -274,14 +277,24 @@ class PictureGenerator:
             circ = self.generate_random_circle()
             h_line = self.generate_random_horizontal_lines()
             v_line = self.generate_random_vertical_lines()
-            datasets[dataset].append(
-                np.where(cross == 0, 1, 0).reshape(self.n ** 2, 1))
-            datasets[dataset].append(
-                np.where(circ == 0, 1, 0).reshape(self.n ** 2, 1))
-            datasets[dataset].append(
-                np.where(h_line == 0, 1, 0).reshape(self.n ** 2, 1))
-            datasets[dataset].append(
-                np.where(v_line == 0, 1, 0).reshape(self.n ** 2, 1))
+            if self.flatten:
+                datasets[dataset].append(
+                    np.where(cross == 0, 1, 0).reshape(self.n ** 2, 1))
+                datasets[dataset].append(
+                    np.where(circ == 0, 1, 0).reshape(self.n ** 2, 1))
+                datasets[dataset].append(
+                    np.where(h_line == 0, 1, 0).reshape(self.n ** 2, 1))
+                datasets[dataset].append(
+                    np.where(v_line == 0, 1, 0).reshape(self.n ** 2, 1))
+            else:
+                datasets[dataset].append(
+                    np.where(cross == 0, 1, 0))
+                datasets[dataset].append(
+                    np.where(circ == 0, 1, 0))
+                datasets[dataset].append(
+                    np.where(h_line == 0, 1, 0))
+                datasets[dataset].append(
+                    np.where(v_line == 0, 1, 0))
             for _, shape_solution in shape_solutions.items():
                 datasets[f"{dataset}_targets"].append(shape_solution)
         return datasets
@@ -360,8 +373,8 @@ class PictureGenerator:
             img (np.ndarray): 2D matrix that one wants to visualize
         """
         # Creates PIL image
-        img = Image.fromarray(np.uint8(255 - img * 255), 'L')
-        img = img.resize((500, 500), Image.NEAREST)
+        img = Image.fromarray(np.uint8(img * 255), 'L')
+        img = img.resize((300, 300), Image.NEAREST)
         img.show()
 
     def save_img(self, img: np.ndarray, path: str) -> None:
@@ -372,6 +385,31 @@ class PictureGenerator:
             img (np.ndarray): 2D matrix in question
             path (str): Local path in which to save the image
         """
-        img = Image.fromarray(np.uint8(255 - img * 255), 'L')
+        img = Image.fromarray(np.uint8(img * 255), 'L')
         # img = img.resize((500, 500), Image.NEAREST)
         img.save(path)
+
+if __name__ == "__main__":
+    params = {
+        "n": 50,
+        "noise": 0.5,
+        "data_split": (0.6, 0.3, 0.1),
+        "centered": True,
+        "n_pictures": 100,
+        "generate_realtime": True,
+        "verbose": True,
+        "flatten": False
+    }
+    n = params["n"]
+    generator = PictureGenerator(**params)
+    datasets = generator.get_datasets()
+    example1 = datasets["training"][0]
+    example2 = datasets["training"][1]
+    example3 = datasets["training"][2]
+    example4 = datasets["training"][3]
+    # print(example1)
+    generator.show_img(example1)
+    generator.show_img(example2)
+    generator.show_img(example3)
+    generator.show_img(example4)
+    
