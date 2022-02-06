@@ -5,7 +5,6 @@ CompressionLevel = 9
 ForwardX11 = yes
 
 [IMMUTABLE]
-# Input immutable right now; ask for how to compress 2D array
 outputs = 4
 
 [GLOBALS]
@@ -16,7 +15,7 @@ wreg_lr = 0.001
 epochs = 100
 l_func = mse
 use_softmax = False
-verbose = True
+verbose = False
 
 [LAYERS]
 n_hl = 2

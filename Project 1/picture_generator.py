@@ -37,7 +37,7 @@ class PictureGenerator:
                  data_split: Tuple = (0.7, 0.2, 0.1),
                  centered: bool = True, n_pictures: int = 100,
                  generate_realtime: bool = False, verbose: bool = True,
-                 flatten: bool=False) -> None:
+                 flatten: bool=True) -> None:
         """Constructor for necessary parameters for picture generation.
 
         Args:
@@ -48,7 +48,7 @@ class PictureGenerator:
             n_pictures (int, optional): Number of pictures to generate/extract in TOTAL. Defaults to 100.
             generate_realtime (bool, optional): Whether or not to generate pictures realtime, or fetch from local directory. Defaults to False.
             verbose (bool, optional): Whether or not to include additional print statements. Defaults to True.
-            flatten (bool, optional): Whether or not to flatten image arrays. Defaults to False.
+            flatten (bool, optional): Whether or not to flatten image arrays. Defaults to True.
         """
         assert round(sum(data_split),8) == 1, "Dataset partitions must sum to 1"
         self.n = n
@@ -377,7 +377,7 @@ class PictureGenerator:
         img = img.resize((300, 300), Image.NEAREST)
         img.show()
 
-    def save_img(self, img: np.ndarray, path: str) -> None:
+    def save_img(self, img: np.ndarray, path: str, resize=False) -> None:
         """Method that saves a given image in the form of a 2D
         matrix to a provided path
 
@@ -386,30 +386,39 @@ class PictureGenerator:
             path (str): Local path in which to save the image
         """
         img = Image.fromarray(np.uint8(img * 255), 'L')
-        # img = img.resize((500, 500), Image.NEAREST)
+        if resize:
+            img = img.resize((300, 300), Image.NEAREST)
         img.save(path)
 
-if __name__ == "__main__":
+
+
+def demonstrate() -> None:
     params = {
-        "n": 50,
-        "noise": 0.5,
+        "n": 100,
+        "noise": 0.05,
         "data_split": (0.6, 0.3, 0.1),
-        "centered": True,
+        "centered": False,
+        # Note: total including train/valid/test
         "n_pictures": 100,
         "generate_realtime": True,
         "verbose": True,
         "flatten": False
     }
-    n = params["n"]
     generator = PictureGenerator(**params)
     datasets = generator.get_datasets()
-    example1 = datasets["training"][0]
-    example2 = datasets["training"][1]
-    example3 = datasets["training"][2]
-    example4 = datasets["training"][3]
-    # print(example1)
-    generator.show_img(example1)
-    generator.show_img(example2)
-    generator.show_img(example3)
-    generator.show_img(example4)
-    
+    crosses = datasets["training"][0::4][:10]
+    circles = datasets["training"][1::4][:10]
+    h_lines = datasets["training"][2::4][:10]
+    v_lines = datasets["training"][3::4][:10]
+    for i in range(len(crosses)):
+        generator.save_img(crosses[i], path=f"./datasets/demonstration/cross_{i}.png", resize=True)
+    for i in range(len(circles)):
+        generator.save_img(circles[i], path=f"./datasets/demonstration/circle_{i}.png", resize=True)
+    for i in range(len(h_lines)):
+        generator.save_img(h_lines[i], path=f"./datasets/demonstration/h_line_{i}.png", resize=True)
+    for i in range(len(v_lines)):
+        generator.save_img(v_lines[i], path=f"./datasets/demonstration/v_line_{i}.png", resize=True)
+
+
+if __name__ == "__main__":
+    demonstrate()
