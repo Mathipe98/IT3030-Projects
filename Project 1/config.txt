@@ -8,28 +8,28 @@ ForwardX11 = yes
 outputs = 4
 
 [GLOBALS]
-inputs = 400
+inputs = 900
 lr = 0.01
-wreg = L1
-wreg_lr = 0.001
+wreg = L2
+wreg_lr = 0
 epochs = 100
-l_func = cross_entropy
-use_softmax = True
+l_func = mse
+use_softmax = False
 verbose = False
 
 [LAYERS]
-n_hl = 5
-hl_neurons = [50, 10, 25, 8, 2]
-hl_funcs = ["relu", "relu", "relu", "relu", "relu"]
-hl_wranges = [(-0.1, 0.1), (-0.1, 0.1), (-0.1, 0.1), (-0.1, 0.1), (-0.1, 0.1)]
+n_hl = 0
+hl_neurons = []
+hl_funcs = []
+hl_wranges = []
 output_func = sigmoid
 output_wrange = (-0.1, 0.1)
 
 [DATA]
-n = 20
+n = 30
 noise = 0.1
 data_split = (0.7, 0.2, 0.1)
 centered = False
-n_pictures = 143
-generate_realtime = True
+n_pictures = 715
+generate_realtime = False
 verbose = True
