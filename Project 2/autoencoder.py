@@ -12,6 +12,7 @@ from keras.layers import Dense, Dropout, Flatten, Conv2D, Conv2DTranspose, MaxPo
 
 from test_models import Denoise
 tf.get_logger().setLevel('ERROR')
+np.random.seed(123)
 
 def visualize_pictures(x_train: np.ndarray, y_train: np.ndarray, decoded_imgs: np.ndarray) -> None:
     n = 10
@@ -43,13 +44,15 @@ def visualize_pictures(x_train: np.ndarray, y_train: np.ndarray, decoded_imgs: n
 
 class AutoEncoder:
 
-    def __init__(self, force_relearn: bool = False, file_name: str = "./autoenc_model/autoencoder_model", model: Any = None) -> None:
+    def __init__(self, generator: StackedMNISTData, force_relearn: bool = False, file_name: str = "./autoenc_model/autoencoder_model", model: Any = None) -> None:
+        self.generator = generator
         self.force_relearn = force_relearn
         self.file_name = file_name
         self.model = model if model is not None else AutoEncoderModel()
         self.model.compile(loss=keras.losses.binary_crossentropy,
                            optimizer=keras.optimizers.Adam(learning_rate=.01),
                            metrics=['accuracy'])
+        self.distribution = None
 
     def load_weights(self):
         try:
@@ -63,7 +66,7 @@ class AutoEncoder:
 
         return done_training
 
-    def train(self, generator: StackedMNISTData, epochs: int = 10) -> bool:
+    def train(self, epochs: int = 10) -> bool:
         """
         Train model if required. As we have a one-channel model we take care to
         only use the first channel of the data.
@@ -72,9 +75,9 @@ class AutoEncoder:
             self.done_training = self.load_weights()
         if self.force_relearn or not self.done_training:
             # Get hold of data
-            x_train_all_channels, _ = generator.get_full_data_set(
+            x_train_all_channels, _ = self.generator.get_full_data_set(
                 training=True)
-            x_test_all_channels, _ = generator.get_full_data_set(
+            x_test_all_channels, _ = self.generator.get_full_data_set(
                 training=False)
             
             # Create a callback for early stopping to avoid overfit
@@ -87,7 +90,7 @@ class AutoEncoder:
                 x_test = x_test_all_channels[:, :, :, [channel]]
                 # Fit model (same sets for input and output because we want to replicate it)
                 self.model.fit(x=x_train, y=x_train, batch_size=1024, epochs=epochs,
-                               validation_data=(x_test, x_test),) #callbacks=[callback])
+                               validation_data=(x_test, x_test),callbacks=[callback])
             # Save weights and leave
             self.model.save_weights(filepath=self.file_name)
             self.done_training = True
@@ -99,8 +102,7 @@ class AutoEncoder:
 
         if not self.done_training:
             # Model is not trained yet...
-            raise ValueError(
-                "Model is not trained, so makes no sense to try to use it")
+            raise ValueError("Model is not trained; cannot predict")
 
         predictions = np.zeros(shape=data.shape)
         for channel in range(no_channels):
@@ -109,13 +111,13 @@ class AutoEncoder:
 
         return predictions
 
-    def visualize_training_results(self, generator: StackedMNISTData) -> None:
-        x_train, y_train = generator.get_full_data_set(training=True)
+    def visualize_training_results(self) -> None:
+        x_train, y_train = self.generator.get_full_data_set(training=True)
         decoded_imgs = self.predict(x_train)
         visualize_pictures(x_train, y_train, decoded_imgs)
 
-    def test_accuracy(self, generator: StackedMNISTData, verifier: VerificationNet, tolerance: float=0.8) -> None:
-        x_test, y_test = generator.get_full_data_set(training=False)
+    def test_accuracy(self, verifier: VerificationNet, tolerance: float=0.8) -> None:
+        x_test, y_test = self.generator.get_full_data_set(training=False)
 
         images = self.predict(x_test)
         labels = y_test
@@ -126,13 +128,40 @@ class AutoEncoder:
         print(f"Predictability: {100*pred:.2f}%")
         print(f"Accuracy: {100 * acc:.2f}%")
     
-    def generate(self, color: str="mono") -> None:
-        if color == "mono":
-            encoding_dim = self.model.encoder.layers[-1].output_shape[1:]
+    def create_distribution(self) -> np.ndarray:
+        if not self.done_training:
+            # Model is not trained yet...
+            raise ValueError("Model is not trained; cannot generate")
+        training_data, _ = self.generator.get_full_data_set(training=True)
+        # For now: only 1 channel
+        encoder_output_elements = self.model.encoder.layers[-1].output_shape[-1]
+        encoder_output_shape = (training_data.shape[0], encoder_output_elements)
+        # no_channels = training_data.shape[-1]
+
+        encoded_predictions = np.zeros(shape=encoder_output_shape)
+        encoded = self.model.encoder.predict(training_data[:, :, :, [0]])
+        encoded_predictions += encoded
+        # Take the mean of all the encoder predictions for use in the sampling
+        # I.e. we now have the average value of all encodings of all inputs, and we will use this
+        # as a basis for drawing random samples for Z
+        distribution = np.mean(encoded_predictions, axis=0)
+        return distribution
+
+
+    
+    def generate(self) -> None:
         n = 10
-        data = np.random.randn(n, *encoding_dim)
-        # data = np.random.uniform(size=(n,) + encoding_dim)
-        decoded_imgs = self.model.decoder.predict(data)
+        distribution = self.create_distribution()
+        random_data = []
+        for _ in range(n):
+            random_sample = []
+            for j in range(len(distribution)):
+                # Create a random value that is based on the mean, where you either subtract or add a chunk of the original value
+                random_value = distribution[j] +  np.random.choice([-1, 1], p=[0.5, 0.5]) * np.random.uniform(low=0.3, high=.4)
+                random_sample.append(random_value)
+            random_data.append(random_sample)
+        random_data = np.array(random_data)
+        decoded_imgs = self.model.decoder.predict(random_data)
         plt.figure(figsize=(20, 4))
         for i in range(1, n + 1):
             ax = plt.subplot(2, n, i)
@@ -142,40 +171,17 @@ class AutoEncoder:
             ax.get_yaxis().set_visible(False)
         plt.show()
 
-
-def train_new_model():
-    ae = AutoEncoder(force_relearn=True)
+def testing() -> None:
     gen = StackedMNISTData(
         mode=DataMode.MONO_BINARY_COMPLETE, default_batch_size=2048)
-    ae.train(gen, epochs=10000)
-    ae.model.summary()
-
-def test_autoencoder_accuracy() -> None:
-    gen = StackedMNISTData(
-        mode=DataMode.MONO_BINARY_COMPLETE, default_batch_size=2048)
-    
     verifier = VerificationNet(force_learn=False)
     verifier.train(gen, epochs=100)
-
-    ae = AutoEncoder(force_relearn=False)
-    ae.train(generator=gen, epochs=200)
-
-    ae.visualize_training_results(gen)
-
-    ae.test_accuracy(generator=gen, verifier=verifier)
-
-def test_generation() -> None:
-
-    ae = AutoEncoder(force_relearn=False)
-    ae.train(generator=None, epochs=200)
-    ae.generate(color="mono")
-    # ae.model.encoder.summary()
-    # ae.model.decoder.summary()
-
-
+    ae = AutoEncoder(generator=gen, force_relearn=False)
+    ae.train(epochs=10000)
+    # ae.visualize_training_results()
+    # ae.test_accuracy(verifier=verifier)
+    ae.generate()
 
 
 if __name__ == "__main__":
-    train_new_model()
-    test_autoencoder_accuracy()
-    test_generation()
+    testing()
