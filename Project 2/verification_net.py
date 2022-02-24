@@ -1,4 +1,5 @@
 from stacked_mnist import StackedMNISTData, DataMode
+import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Dropout, Flatten, Conv2D, MaxPooling2D
@@ -17,7 +18,8 @@ class VerificationNet:
         self.file_name = file_name
 
         model = Sequential()
-        model.add(Conv2D(32, kernel_size=(3, 3), activation='relu', input_shape=(28, 28, 1)))
+        model.add(Conv2D(32, kernel_size=(3, 3),
+                  activation='relu', input_shape=(28, 28, 1)))
         for _ in range(3):
             model.add(Conv2D(64, (3, 3), activation='relu'))
             model.add(MaxPooling2D(pool_size=(2, 2)))
@@ -25,7 +27,7 @@ class VerificationNet:
 
         model.add(Flatten())
         model.add(Dense(128, activation='relu'))
-        model.add(Dropout(0.5))
+        #model.add(Dropout(0.5))
         model.add(Dense(10, activation='softmax'))
 
         model.compile(loss=keras.losses.categorical_crossentropy,
@@ -33,7 +35,7 @@ class VerificationNet:
                       metrics=['accuracy'])
 
         self.model = model
-        self.done_training = self.load_weights()
+        # self.done_training = self.load_weights()
 
     def load_weights(self):
         # noinspection PyBroadException
@@ -43,7 +45,8 @@ class VerificationNet:
             done_training = True
 
         except:
-            print(f"Could not read weights for verification_net from file. Must retrain...")
+            print(
+                f"Could not read weights for verification_net from file. Must retrain...")
             done_training = False
 
         return done_training
@@ -62,13 +65,19 @@ class VerificationNet:
 
             # "Translate": Only look at "red" channel; only use the last digit. Use one-hot for labels during training
             x_train = x_train[:, :, :, [0]]
-            y_train = keras.utils.to_categorical((y_train % 10).astype(int), 10)
+            y_train = keras.utils.to_categorical(
+                (y_train % 10).astype(int), 10)
             x_test = x_test[:, :, :, [0]]
             y_test = keras.utils.to_categorical((y_test % 10).astype(int), 10)
 
+            # Create a callback for early stopping to avoid overfit
+            callback = tf.keras.callbacks.EarlyStopping(
+                monitor='loss', min_delta=0.0001, patience=20, verbose=0, restore_best_weights=True
+            )
+
             # Fit model
             self.model.fit(x=x_train, y=y_train, batch_size=1024, epochs=epochs,
-                           validation_data=(x_test, y_test))
+                           validation_data=(x_test, y_test), callbacks=[callback])
 
             # Save weights and leave
             self.model.save_weights(filepath=self.file_name)
@@ -94,16 +103,16 @@ class VerificationNet:
 
         if self.done_training is False:
             # Model is not trained yet...
-            raise ValueError("Model is not trained, so makes no sense to try to use it")
+            raise ValueError(
+                "Model is not trained, so makes no sense to try to use it")
 
         predictions = np.zeros((data.shape[0],))
         beliefs = np.ones((data.shape[0],))
         for channel in range(no_channels):
-            dbg1 = data[:,:,:,[channel]]
             channel_prediction = self.model.predict(data[:, :, :, [channel]])
-            dbg2 = np.max(channel_prediction, axis=1)
             beliefs = np.multiply(beliefs, np.max(channel_prediction, axis=1))
-            predictions += np.argmax(channel_prediction, axis=1) * np.power(10, channel)
+            predictions += np.argmax(channel_prediction,
+                                     axis=1) * np.power(10, channel)
 
         return predictions, beliefs
 
@@ -152,14 +161,16 @@ class VerificationNet:
 
 
 if __name__ == "__main__":
-    gen = StackedMNISTData(mode=DataMode.MONO_BINARY_COMPLETE, default_batch_size=2048)
+    gen = StackedMNISTData(
+        mode=DataMode.COLOR_BINARY_COMPLETE, default_batch_size=2048)
     net = VerificationNet(force_learn=False)
     net.train(generator=gen, epochs=200)
+    net.model.summary()
 
     # I have no data generator (VAE or whatever) here, so just use a sampled set
-    img, labels = gen.get_random_batch(training=True,  batch_size=25000)
-    cov = net.check_class_coverage(data=img, tolerance=.98)
-    pred, acc = net.check_predictability(data=img, correct_labels=labels)
-    print(f"Coverage: {100*cov:.2f}%")
-    print(f"Predictability: {100*pred:.2f}%")
-    print(f"Accuracy: {100 * acc:.2f}%")
+    # img, labels = gen.get_random_batch(training=True,  batch_size=25000)
+    # cov = net.check_class_coverage(data=img, tolerance=.98)
+    # pred, acc = net.check_predictability(data=img, correct_labels=labels)
+    # print(f"Coverage: {100*cov:.2f}%")
+    # print(f"Predictability: {100*pred:.2f}%")
+    # print(f"Accuracy: {100 * acc:.2f}%")
