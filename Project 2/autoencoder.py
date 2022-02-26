@@ -8,38 +8,43 @@ from autoencoder_model import AutoEncoderModel
 from tensorflow import keras
 from tensorflow.keras import layers
 from keras.models import Sequential, Model
-from keras.layers import Dense, Dropout, Flatten, Conv2D, Conv2DTranspose, MaxPooling2D
+from keras.layers import Dense, Dropout, Flatten, Conv2D, Conv2DTranspose, MaxPooling2D, InputLayer
 
 from test_models import Denoise
 tf.get_logger().setLevel('ERROR')
-np.random.seed(123)
+seed = 123
+np.random.seed(seed)
+tf.random.set_seed(seed)
 
-def visualize_pictures(x_train: np.ndarray, y_train: np.ndarray, decoded_imgs: np.ndarray) -> None:
+
+def visualize_pictures(x: np.ndarray, y: np.ndarray, decoded_imgs: np.ndarray = None) -> None:
     n = 10
-    random_start = np.random.randint(0, x_train.shape[0] - 11)
+    end = max(0, x.shape[0] - 11)
+    if end == 0:
+        random_start = 0
+    else:
+        random_start = np.random.randint(0, end)
     plt.figure(figsize=(20, 4))
-    for i in range(1, n + 1):
+    for i in range(n):
         # Display original
-        ax = plt.subplot(2, n, i)
-        original = x_train[i + random_start].astype(np.float64)
+        ax = plt.subplot(2, n, i+1)
+        original = x[i + random_start].astype(np.float64)
         plt.imshow(original)
-        plt.title(y_train[i + random_start])
+        plt.title(y[i + random_start])
         plt.gray()
         ax.get_xaxis().set_visible(False)
         ax.get_yaxis().set_visible(False)
 
-        # Display reconstruction
-        ax = plt.subplot(2, n, i + n)
-        copy = decoded_imgs[i + random_start]
-        plt.imshow(copy)
-        plt.title(y_train[i + random_start])
-        plt.gray()
-        ax.get_xaxis().set_visible(False)
-        ax.get_yaxis().set_visible(False)
+        if decoded_imgs is not None:
+            # Display reconstruction
+            ax = plt.subplot(2, n, i + 1 + n)
+            copy = decoded_imgs[i + random_start]
+            plt.imshow(copy)
+            plt.title(y[i + random_start])
+            plt.gray()
+            ax.get_xaxis().set_visible(False)
+            ax.get_yaxis().set_visible(False)
     plt.show()
-
-
-
 
 
 class AutoEncoder:
@@ -50,9 +55,10 @@ class AutoEncoder:
         self.file_name = file_name
         self.model = model if model is not None else AutoEncoderModel()
         self.model.compile(loss=keras.losses.binary_crossentropy,
-                           optimizer=keras.optimizers.Adam(learning_rate=.01),
+                           optimizer=keras.optimizers.Adam(learning_rate=.001),
                            metrics=['accuracy'])
         self.distribution = None
+        self.done_training = False
 
     def load_weights(self):
         try:
@@ -75,22 +81,34 @@ class AutoEncoder:
             self.done_training = self.load_weights()
         if self.force_relearn or not self.done_training:
             # Get hold of data
-            x_train_all_channels, _ = self.generator.get_full_data_set(
+            x_train_all_channels, y_train_all_channels = self.generator.get_full_data_set(
                 training=True)
-            x_test_all_channels, _ = self.generator.get_full_data_set(
+            x_test_all_channels, y_test_all_channels = self.generator.get_full_data_set(
                 training=False)
-            
+
             # Create a callback for early stopping to avoid overfit
             callback = tf.keras.callbacks.EarlyStopping(
                 monitor='loss', min_delta=0.0001, patience=25, verbose=0, restore_best_weights=True
             )
+            # Create a function that adds padding to the labels in order to find the correct one by channel
+
+            def pad(label: int, need_padding: bool):
+                if not need_padding:
+                    return str(label)
+                label = str(label)
+                padding = 3 - len(label)
+                for _ in range(padding):
+                    label = "0" + label
+                return label
+            need_padding = x_train_all_channels.shape[-1] > 1
             for channel in range(x_train_all_channels.shape[-1]):
                 # Iterate through all the channels, and train on each channel separately
                 x_train = x_train_all_channels[:, :, :, [channel]]
                 x_test = x_test_all_channels[:, :, :, [channel]]
+
                 # Fit model (same sets for input and output because we want to replicate it)
-                self.model.fit(x=x_train, y=x_train, batch_size=1024, epochs=epochs,
-                               validation_data=(x_test, x_test),callbacks=[callback])
+                self.model.fit(x=x_train, y=x_train, batch_size=2048, epochs=epochs,
+                               validation_data=(x_test, x_test), callbacks=[callback])
             # Save weights and leave
             self.model.save_weights(filepath=self.file_name)
             self.done_training = True
@@ -116,9 +134,13 @@ class AutoEncoder:
         decoded_imgs = self.predict(x_train)
         visualize_pictures(x_train, y_train, decoded_imgs)
 
-    def test_accuracy(self, verifier: VerificationNet, tolerance: float=0.8) -> None:
+    def visualize_testing_results(self) -> None:
         x_test, y_test = self.generator.get_full_data_set(training=False)
+        decoded_imgs = self.predict(x_test)
+        visualize_pictures(x_test, y_test, decoded_imgs)
 
+    def test_accuracy(self, verifier: VerificationNet, tolerance: float = 0.8) -> None:
+        x_test, y_test = self.generator.get_full_data_set(training=False)
         images = self.predict(x_test)
         labels = y_test
         cov = verifier.check_class_coverage(data=images, tolerance=tolerance)
@@ -127,7 +149,7 @@ class AutoEncoder:
         print(f"Coverage: {100*cov:.2f}%")
         print(f"Predictability: {100*pred:.2f}%")
         print(f"Accuracy: {100 * acc:.2f}%")
-    
+
     def create_distribution(self) -> np.ndarray:
         if not self.done_training:
             # Model is not trained yet...
@@ -135,33 +157,46 @@ class AutoEncoder:
         training_data, _ = self.generator.get_full_data_set(training=True)
         # For now: only 1 channel
         encoder_output_elements = self.model.encoder.layers[-1].output_shape[-1]
-        encoder_output_shape = (training_data.shape[0], encoder_output_elements)
-        # no_channels = training_data.shape[-1]
-
+        encoder_output_shape = (
+            training_data.shape[0], encoder_output_elements)
+        no_channels = training_data.shape[-1]
         encoded_predictions = np.zeros(shape=encoder_output_shape)
-        encoded = self.model.encoder.predict(training_data[:, :, :, [0]])
-        encoded_predictions += encoded
+        for channel in range(no_channels):
+            encoded = self.model.encoder.predict(
+                training_data[:, :, :, [channel]]) * 1/no_channels
+            encoded_predictions += encoded
         # Take the mean of all the encoder predictions for use in the sampling
         # I.e. we now have the average value of all encodings of all inputs, and we will use this
         # as a basis for drawing random samples for Z
         distribution = np.mean(encoded_predictions, axis=0)
         return distribution
 
-
-    
     def generate(self) -> None:
+        if not self.done_training:
+            # Model is not trained yet...
+            raise ValueError("Model is not trained; cannot generate")
         n = 10
         distribution = self.create_distribution()
+        training_data, _ = self.generator.get_full_data_set()
+        no_channels = training_data.shape[-1]
         random_data = []
         for _ in range(n):
             random_sample = []
             for j in range(len(distribution)):
-                # Create a random value that is based on the mean, where you either subtract or add a chunk of the original value
-                random_value = distribution[j] +  np.random.choice([-1, 1], p=[0.5, 0.5]) * np.random.uniform(low=0.3, high=.4)
-                random_sample.append(random_value)
+                colors = []
+                for _ in range(no_channels):
+                    # Create a random value that is based on the mean, where you either subtract or add a chunk of the original value
+                    random_value = distribution[j] + np.random.choice(
+                        [-1, 1], p=[0.5, 0.5]) * np.random.uniform(low=0.3, high=.4)
+                    colors.append(random_value)
+                random_sample.append(colors)
             random_data.append(random_sample)
         random_data = np.array(random_data)
-        decoded_imgs = self.model.decoder.predict(random_data)
+        decoded_imgs = np.zeros(shape=(n,) + training_data.shape[1:])
+        for channel in range(decoded_imgs.shape[-1]):
+            decoder_input = random_data[:, :, channel]
+            output = self.model.decoder.predict(decoder_input)
+            decoded_imgs[:, :, :, channel] += output[:, :, :, 0]
         plt.figure(figsize=(20, 4))
         for i in range(1, n + 1):
             ax = plt.subplot(2, n, i)
@@ -171,17 +206,109 @@ class AutoEncoder:
             ax.get_yaxis().set_visible(False)
         plt.show()
 
+    def anomaly_detection(self) -> None:
+        if not self.done_training:
+            # Model is not trained yet...
+            raise ValueError("Model is not trained; cannot detect anomalies")
+        bce = keras.losses.BinaryCrossentropy()
+        training_data, _ = self.generator.get_full_data_set(training=True)
+        testing_data, testing_labels = self.generator.get_full_data_set(
+            training=False)
+        training_loss = bce(
+            training_data, self.model.predict(training_data)).numpy()
+        threshold = 2 * np.mean(training_loss) + 10 * np.std(training_loss)
+        anomalies = []
+        count_missing = 0
+        for i in range(len(testing_data)):
+            example = testing_data[i]
+            label = testing_labels[i]
+            example = example[np.newaxis, :]
+            reconstruction = self.model.predict(example)
+            loss = bce(example, reconstruction).numpy()
+            if loss > threshold:
+                anomalies.append((example[0, :, :, :], label))
+            if label == 8:
+                count_missing += 1
+            if len(anomalies) >= 10:
+                break
+        anomaly_examples = np.array([anomaly[0] for anomaly in anomalies])
+        anomaly_labels = np.array([anomaly[1] for anomaly in anomalies])
+        visualize_pictures(anomaly_examples, anomaly_labels)
+        self.visualize_testing_results()
+
+
 def testing() -> None:
     gen = StackedMNISTData(
         mode=DataMode.MONO_BINARY_COMPLETE, default_batch_size=2048)
     verifier = VerificationNet(force_learn=False)
     verifier.train(gen, epochs=100)
-    ae = AutoEncoder(generator=gen, force_relearn=False)
-    ae.train(epochs=10000)
-    # ae.visualize_training_results()
-    # ae.test_accuracy(verifier=verifier)
+    ae = AutoEncoder(generator=gen, force_relearn=True)
+    ae.train(epochs=1000)
+    ae.visualize_training_results()
+    ae.visualize_testing_results()
+    ae.test_accuracy(verifier=verifier)
     ae.generate()
 
 
+def test_anomaly_detection() -> None:
+    gen = StackedMNISTData(
+        mode=DataMode.MONO_BINARY_MISSING, default_batch_size=2048)
+    verifier = VerificationNet(force_learn=False)
+    verifier.train(gen, epochs=100)
+    ae = AutoEncoder(generator=gen, force_relearn=False,
+                     file_name="./autoenc_model/anomaly_detector")
+    ae.train(epochs=200)
+    ae.anomaly_detection()
+
+
 if __name__ == "__main__":
+    # test_anomaly_detection()
     testing()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Use the channel values, add padding to them (because int(001) = 1), and then one-hot encode
+                # y_train = np.array([int(pad(y, need_padding)[channel]) for y in y_train_all_channels])
+                # y_test = np.array([int(pad(y, need_padding)[channel]) for y in y_test_all_channels])
+                # y_train = keras.utils.to_categorical(
+                #     (y_train % 10).astype(int), 10)
+                # y_test = keras.utils.to_categorical(
+                #     (y_test % 10).astype(int), 10)
+
+                # self.model.encoder.fit(x=x_train, y=y_train, batch_size=512, epochs=50,
+                #                 validation_data=(x_test, y_test), callbacks=[callback])
+                # self.model.decoder.fit(x=y_train, y=x_train, batch_size=512, epochs=50,
+                #                 validation_data=(y_test, x_test), callbacks=[callback])
