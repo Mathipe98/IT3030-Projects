@@ -17,7 +17,7 @@ np.random.seed(seed)
 tf.random.set_seed(seed)
 
 
-def visualize_pictures(x: np.ndarray, y: np.ndarray, decoded_imgs: np.ndarray = None) -> None:
+def visualize_pictures(x: np.ndarray, y: np.ndarray, decoded_imgs: np.ndarray = None, filename: str=None) -> None:
     n = 10
     end = max(0, x.shape[0] - 11)
     if end == 0:
@@ -44,6 +44,8 @@ def visualize_pictures(x: np.ndarray, y: np.ndarray, decoded_imgs: np.ndarray = 
             plt.gray()
             ax.get_xaxis().set_visible(False)
             ax.get_yaxis().set_visible(False)
+    if filename is not None:
+        plt.savefig(filename)
     plt.show()
 
 
@@ -216,25 +218,24 @@ class AutoEncoder:
             training=False)
         training_loss = bce(
             training_data, self.model.predict(training_data)).numpy()
-        threshold = 2 * np.mean(training_loss) + 10 * np.std(training_loss)
-        anomalies = []
-        count_missing = 0
+        threshold = 5 * np.mean(training_loss) + 10 * np.std(training_loss)
+        example_loss_map = []
         for i in range(len(testing_data)):
+            print(i)
             example = testing_data[i]
             label = testing_labels[i]
             example = example[np.newaxis, :]
             reconstruction = self.model.predict(example)
             loss = bce(example, reconstruction).numpy()
-            if loss > threshold:
-                anomalies.append((example[0, :, :, :], label))
-            if label == 8:
-                count_missing += 1
-            if len(anomalies) >= 10:
+            example_loss_map.append((reconstruction[0, :, :, :], label, loss))
+            if i == 3000:
                 break
-        anomaly_examples = np.array([anomaly[0] for anomaly in anomalies])
-        anomaly_labels = np.array([anomaly[1] for anomaly in anomalies])
-        visualize_pictures(anomaly_examples, anomaly_labels)
-        self.visualize_testing_results()
+        sorted_map = sorted(example_loss_map, key=lambda tup: tup[2], reverse=True)
+        anomaly_examples = np.array([anomaly[0] for anomaly in sorted_map[:10]])
+        anomaly_labels = np.array([anomaly[1] for anomaly in sorted_map[:10]])
+        print(f"Highest losses:\n {[anomaly[2] for anomaly in sorted_map[:10]]}")
+        print(f"Corresponding labels:\n {[anomaly[1] for anomaly in sorted_map[:10]]}")
+        visualize_pictures(anomaly_examples, anomaly_labels, filename='./figures/anomalies_3000.png')
 
 
 def testing() -> None:
@@ -242,7 +243,7 @@ def testing() -> None:
         mode=DataMode.MONO_BINARY_COMPLETE, default_batch_size=2048)
     verifier = VerificationNet(force_learn=False)
     verifier.train(gen, epochs=100)
-    ae = AutoEncoder(generator=gen, force_relearn=True)
+    ae = AutoEncoder(generator=gen, force_relearn=False)
     ae.train(epochs=1000)
     ae.visualize_training_results()
     ae.visualize_testing_results()
@@ -257,13 +258,13 @@ def test_anomaly_detection() -> None:
     verifier.train(gen, epochs=100)
     ae = AutoEncoder(generator=gen, force_relearn=False,
                      file_name="./autoenc_model/anomaly_detector")
-    ae.train(epochs=200)
+    ae.train(epochs=500)
     ae.anomaly_detection()
 
 
 if __name__ == "__main__":
-    # test_anomaly_detection()
-    testing()
+    test_anomaly_detection()
+    # testing()
 
 
 
