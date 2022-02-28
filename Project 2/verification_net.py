@@ -150,13 +150,35 @@ class VerificationNet:
         predictions = predictions[beliefs >= tolerance]
         predictability = len(predictions) / len(data)
 
+        def pad(label: int, need_padding: bool) -> str:
+            if not need_padding:
+                return str(label)
+            label = str(label)
+            padding = 3 - len(label)
+            for _ in range(padding):
+                label = "0" + label
+            return label
+
         if correct_labels is not None:
             # Drop those that were below threshold
             correct_labels = correct_labels[beliefs >= tolerance]
-            accuracy = np.sum(predictions == correct_labels) / len(data)
+            # Calculate the number of digits that were correct in each prediction
+            # ((Example) This to make prediction 616 with answer 618 not count as 0, but as 0.66)
+            correct_digits = 0
+            total_digits = 0
+            need_padding = np.any(predictions >= 100)
+            for i in range(len(predictions)):
+                prediction = predictions[i]
+                prediction = pad(int(prediction), need_padding)
+                ans = correct_labels[i]
+                ans = pad(int(ans), need_padding)
+                for j in range(len(prediction)):
+                    if prediction[j] == ans[j]:
+                        correct_digits += 1
+                    total_digits += 1
+            accuracy = correct_digits / total_digits
         else:
             accuracy = None
-
         return predictability, accuracy
 
 

@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from typing import Any
 from stacked_mnist import StackedMNISTData, DataMode
 from verification_net import VerificationNet
-from autoencoder_model import AutoEncoderModel
+from ae_model import AutoEncoderModel
 from tensorflow import keras
 from tensorflow.keras import layers
 from keras.models import Sequential, Model
@@ -16,6 +16,14 @@ seed = 123
 np.random.seed(seed)
 tf.random.set_seed(seed)
 
+def pad(label: int, need_padding: bool) -> str:
+    if not need_padding:
+        return str(label)
+    label = str(label)
+    padding = 3 - len(label)
+    for _ in range(padding):
+        label = "0" + label
+    return label
 
 def visualize_pictures(x: np.ndarray, y: np.ndarray, decoded_imgs: np.ndarray = None, filename: str=None) -> None:
     n = 10
@@ -24,13 +32,14 @@ def visualize_pictures(x: np.ndarray, y: np.ndarray, decoded_imgs: np.ndarray = 
         random_start = 0
     else:
         random_start = np.random.randint(0, end)
+    need_padding = x.shape[-1] > 1
     plt.figure(figsize=(20, 4))
     for i in range(n):
         # Display original
         ax = plt.subplot(2, n, i+1)
         original = x[i + random_start].astype(np.float64)
         plt.imshow(original)
-        plt.title(y[i + random_start])
+        plt.title(pad(y[i + random_start], need_padding))
         plt.gray()
         ax.get_xaxis().set_visible(False)
         ax.get_yaxis().set_visible(False)
@@ -40,7 +49,7 @@ def visualize_pictures(x: np.ndarray, y: np.ndarray, decoded_imgs: np.ndarray = 
             ax = plt.subplot(2, n, i + 1 + n)
             copy = decoded_imgs[i + random_start]
             plt.imshow(copy)
-            plt.title(y[i + random_start])
+            plt.title(pad(y[i + random_start], need_padding))
             plt.gray()
             ax.get_xaxis().set_visible(False)
             ax.get_yaxis().set_visible(False)
@@ -83,26 +92,17 @@ class AutoEncoder:
             self.done_training = self.load_weights()
         if self.force_relearn or not self.done_training:
             # Get hold of data
-            x_train_all_channels, y_train_all_channels = self.generator.get_full_data_set(
+            x_train_all_channels, _ = self.generator.get_full_data_set(
                 training=True)
-            x_test_all_channels, y_test_all_channels = self.generator.get_full_data_set(
+            x_test_all_channels, _ = self.generator.get_full_data_set(
                 training=False)
 
-            # Create a callback for early stopping to avoid overfit
+            # Create a callback for stopping if we don't get any progress
             callback = tf.keras.callbacks.EarlyStopping(
                 monitor='loss', min_delta=0.0001, patience=25, verbose=0, restore_best_weights=True
             )
             # Create a function that adds padding to the labels in order to find the correct one by channel
 
-            def pad(label: int, need_padding: bool):
-                if not need_padding:
-                    return str(label)
-                label = str(label)
-                padding = 3 - len(label)
-                for _ in range(padding):
-                    label = "0" + label
-                return label
-            need_padding = x_train_all_channels.shape[-1] > 1
             for channel in range(x_train_all_channels.shape[-1]):
                 # Iterate through all the channels, and train on each channel separately
                 x_train = x_train_all_channels[:, :, :, [channel]]
@@ -127,7 +127,7 @@ class AutoEncoder:
         predictions = np.zeros(shape=data.shape)
         for channel in range(no_channels):
             channel_prediction = self.model.predict(data[:, :, :, [channel]])
-            predictions[:, :, :, channel] += channel_prediction[:, :, :, 0]
+            predictions[:, :, :, [channel]] += channel_prediction[:, :, :, [0]]
 
         return predictions
 
@@ -213,21 +213,21 @@ class AutoEncoder:
             # Model is not trained yet...
             raise ValueError("Model is not trained; cannot detect anomalies")
         bce = keras.losses.BinaryCrossentropy()
-        training_data, _ = self.generator.get_full_data_set(training=True)
         testing_data, testing_labels = self.generator.get_full_data_set(
             training=False)
-        training_loss = bce(
-            training_data, self.model.predict(training_data)).numpy()
-        threshold = 5 * np.mean(training_loss) + 10 * np.std(training_loss)
+        no_channels = testing_data.shape[-1]
         example_loss_map = []
         for i in range(len(testing_data)):
             print(i)
             example = testing_data[i]
             label = testing_labels[i]
             example = example[np.newaxis, :]
-            reconstruction = self.model.predict(example)
+            reconstruction = np.zeros(shape=(testing_data.shape[1:]))
+            for channel in range(no_channels):
+                a = self.model.predict(example[:,:,:,[channel]])
+                reconstruction[:,:,[channel]] += a[0,:,:,:]
             loss = bce(example, reconstruction).numpy()
-            example_loss_map.append((reconstruction[0, :, :, :], label, loss))
+            example_loss_map.append((reconstruction, label, loss))
             if i == 3000:
                 break
         sorted_map = sorted(example_loss_map, key=lambda tup: tup[2], reverse=True)
@@ -235,10 +235,11 @@ class AutoEncoder:
         anomaly_labels = np.array([anomaly[1] for anomaly in sorted_map[:10]])
         print(f"Highest losses:\n {[anomaly[2] for anomaly in sorted_map[:10]]}")
         print(f"Corresponding labels:\n {[anomaly[1] for anomaly in sorted_map[:10]]}")
-        visualize_pictures(anomaly_examples, anomaly_labels, filename='./figures/anomalies_3000.png')
+        visualize_pictures(anomaly_examples, anomaly_labels, filename='./figures/STACK_anomalies_3000.png')
 
 
-def testing() -> None:
+def test_mono() -> None:
+    print(f"Testing mono accuracy\n")
     gen = StackedMNISTData(
         mode=DataMode.MONO_BINARY_COMPLETE, default_batch_size=2048)
     verifier = VerificationNet(force_learn=False)
@@ -250,8 +251,20 @@ def testing() -> None:
     ae.test_accuracy(verifier=verifier)
     ae.generate()
 
+def test_color() -> None:
+    print(f"Testing colour (stack) accuracy\n")
+    gen = StackedMNISTData(
+        mode=DataMode.COLOR_BINARY_COMPLETE, default_batch_size=2048)
+    verifier = VerificationNet(force_learn=False)
+    verifier.train(gen, epochs=100)
+    ae = AutoEncoder(generator=gen, force_relearn=False, file_name='./autoenc_model/autoencoder_STACK')
+    ae.train(epochs=1000)
+    ae.visualize_training_results()
+    ae.visualize_testing_results()
+    ae.test_accuracy(verifier=verifier, tolerance=0.5)
+    ae.generate()
 
-def test_anomaly_detection() -> None:
+def test_mono_anomaly() -> None:
     gen = StackedMNISTData(
         mode=DataMode.MONO_BINARY_MISSING, default_batch_size=2048)
     verifier = VerificationNet(force_learn=False)
@@ -261,55 +274,18 @@ def test_anomaly_detection() -> None:
     ae.train(epochs=500)
     ae.anomaly_detection()
 
+def test_color_anomaly() -> None:
+    gen = StackedMNISTData(
+        mode=DataMode.COLOR_BINARY_MISSING, default_batch_size=2048)
+    verifier = VerificationNet(force_learn=False)
+    verifier.train(gen, epochs=100)
+    ae = AutoEncoder(generator=gen, force_relearn=False,
+                     file_name="./autoenc_model/anomaly_detector")
+    ae.train(epochs=500)
+    ae.anomaly_detection()
+
 
 if __name__ == "__main__":
-    test_anomaly_detection()
-    # testing()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# Use the channel values, add padding to them (because int(001) = 1), and then one-hot encode
-                # y_train = np.array([int(pad(y, need_padding)[channel]) for y in y_train_all_channels])
-                # y_test = np.array([int(pad(y, need_padding)[channel]) for y in y_test_all_channels])
-                # y_train = keras.utils.to_categorical(
-                #     (y_train % 10).astype(int), 10)
-                # y_test = keras.utils.to_categorical(
-                #     (y_test % 10).astype(int), 10)
-
-                # self.model.encoder.fit(x=x_train, y=y_train, batch_size=512, epochs=50,
-                #                 validation_data=(x_test, y_test), callbacks=[callback])
-                # self.model.decoder.fit(x=y_train, y=x_train, batch_size=512, epochs=50,
-                #                 validation_data=(y_test, x_test), callbacks=[callback])
+    # test_anomaly_detection()
+    test_mono()
+    # test_color()

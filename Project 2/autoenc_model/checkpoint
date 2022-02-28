@@ -1,2 +1,2 @@
-model_checkpoint_path: "anomaly_detector"
-all_model_checkpoint_paths: "anomaly_detector"
+model_checkpoint_path: "autoencoder_STACK"
+all_model_checkpoint_paths: "autoencoder_STACK"
