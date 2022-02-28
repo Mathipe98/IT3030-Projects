@@ -61,16 +61,14 @@ class VAE:
             # Save weights and leave
             self.model.save_weights(filepath=self.file_name)
             self.done_training = True
-
         return self.done_training
-    
 
 def test():
     print(f"Testing mono accuracy\n")
     gen = StackedMNISTData(
         mode=DataMode.MONO_BINARY_COMPLETE, default_batch_size=2048)
-    verifier = VerificationNet(force_learn=False)
-    verifier.train(gen, epochs=100)
+    # verifier = VerificationNet(force_learn=False)
+    # verifier.train(gen, epochs=100)
     vae = VAE(generator=gen, force_relearn=False)
     vae.train(epochs=100)
 

@@ -25,27 +25,26 @@ class VariationalAutoEncoderModel(Model):
 
         x, y = data
 
-        with tf.GradientTape() as encoder, tf.GradientTape() as decoder:
-        
+        with tf.GradientTape(persistent=True) as tape:
             mean, log_variance = self.encoder(x, training=True)
             z_latent = self.z_latent([mean, log_variance])
-            generated_images = self.decoder(z_latent, training=True)
-            loss = self.vae_loss(x, generated_images, mean, log_variance)
+            y_pred = self.decoder(z_latent, training=True)
+            loss = self.vae_loss(x, y_pred, mean, log_variance)
 
         encoder_variables = self.encoder.trainable_variables
         decoder_variables = self.decoder.trainable_variables
-        encoder_gradients = encoder.gradient(loss, encoder_variables)
-        decoder_gradients = decoder.gradient(loss, decoder_variables)
+        encoder_gradients = tape.gradient(loss, encoder_variables)
+        decoder_gradients = tape.gradient(loss, decoder_variables)
         
         # Update weights
         self.optimizer.apply_gradients(zip(encoder_gradients, encoder_variables))
         self.optimizer.apply_gradients(zip(decoder_gradients, decoder_variables))
 
         # Update metrics
-        self.compiled_metrics.update_state(x, generated_images)
-        #return {"loss": loss}
+        self.compiled_metrics.update_state(x, y_pred)
         return {m.name: m.result() for m in self.metrics}
     
+    @tf.function
     def call(self, x):
         encoded = self.encoder(x)
         z = self.z_latent(encoded)
@@ -58,7 +57,7 @@ class VariationalAutoEncoderModel(Model):
     
     def RL(self, y_true: np.ndarray, y_pred: np.ndarray) -> float:
         bce = keras.losses.BinaryCrossentropy()
-        return K.mean(K.exp(bce(y_true, y_pred)))
+        return K.exp(bce(y_true, y_pred))
     
     def vae_loss(self, y_true, y_pred, mean, log_variance):
         r_loss = self.RL(y_true, y_pred)
@@ -71,16 +70,17 @@ class VariationalAutoEncoderModel(Model):
             -.5 * ((sample - mean) ** 2. * tf.exp(-logvar) + logvar + log2pi),
             axis=raxis)
 
-
-    def compute_loss(self, x):
+    @tf.function
+    def compute_loss(self, x, y, y_pred, sample_weight):
         mean, logvar = self.encoder(x)
-        z = self.sample_z_layer(mean, logvar)
-        x_logit = model.decode(z)
-        cross_ent = tf.nn.sigmoid_cross_entropy_with_logits(logits=x_logit, labels=x)
-        logpx_z = -tf.reduce_sum(cross_ent, axis=[1, 2, 3])
-        logpz = self.log_normal_pdf(z, 0., 0.)
-        logqz_x = self.log_normal_pdf(z, mean, logvar)
-        return -tf.reduce_mean(logpx_z + logpz - logqz_x)
+        loss = self.vae_loss(y_true=y, y_pred=y_pred, mean=mean, log_variance=logvar)
+        # z = self.sample_z_layer(mean, logvar)
+        # x_logit = model.decode(z)
+        # cross_ent = tf.nn.sigmoid_cross_entropy_with_logits(logits=x_logit, labels=x)
+        # logpx_z = -tf.reduce_sum(cross_ent, axis=[1, 2, 3])
+        # logpz = self.log_normal_pdf(z, 0., 0.)
+        # logqz_x = self.log_normal_pdf(z, mean, logvar)
+        return loss # -tf.reduce_mean(logpx_z + logpz - logqz_x)
 
     def create_encoder(self, input_shape: tuple) -> Model:
         
