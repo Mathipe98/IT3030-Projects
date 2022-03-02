@@ -21,7 +21,7 @@ class VAE:
         self.force_relearn = force_relearn
         self.file_name = file_name
         self.model = VariationalAutoEncoderModel()
-        self.model.compile(optimizer=keras.optimizers.Adam(learning_rate=.0002),
+        self.model.compile(optimizer=keras.optimizers.Adam(learning_rate=.0005),
                            loss=keras.losses.binary_crossentropy,
                            metrics=['accuracy'], run_eagerly=True)
         self.done_training = False

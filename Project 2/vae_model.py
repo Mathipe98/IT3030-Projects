@@ -15,8 +15,8 @@ class VariationalAutoEncoderModel(Model):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.encoder_input_shape = (28,28,1)
-        self.z_layer_input_shape = (32,)
-        self.decoder_input_shape = (32,)
+        self.z_layer_input_shape = (16,)
+        self.decoder_input_shape = (16,)
         self.encoder = self.create_encoder(input_shape=self.encoder_input_shape)
         self.z_latent = self.create_z_layer()
         self.decoder = self.create_decoder(input_shape=self.decoder_input_shape)
@@ -76,12 +76,6 @@ class VariationalAutoEncoderModel(Model):
         loss = bce(y_true, y_pred)
         reduced_sum = -tf.reduce_sum(loss, axis=[1,2])
         return reduced_sum
-    
-    def log_normal_pdf(self, sample, mean, logvar, raxis=1):
-        log2pi = tf.math.log(2. * np.pi)
-        return tf.reduce_sum(
-            -.5 * ((sample - mean) ** 2. * tf.exp(-logvar) + logvar + log2pi),
-            axis=raxis)
 
     
     def vae_loss(self, y_true: np.ndarray, y_pred: np.ndarray, mean: np.ndarray, log_variance: np.ndarray) -> np.ndarray:
@@ -103,27 +97,15 @@ class VariationalAutoEncoderModel(Model):
         Returns:
             np.ndarray: Loss value
         """
-        # z = tf.cast(self.z_latent([mean, log_variance]), dtype="float32")
-        # z = self.z_latent([mean, log_variance])
-        # cross_ent = tf.nn.sigmoid_cross_entropy_with_logits(logits=y_pred, labels=y_true)
-        # r_loss = -tf.reduce_sum(cross_ent, axis=[1, 2, 3])
-        # logpz = self.log_normal_pdf(z, 0., 0.)
-        # logqz_x = self.log_normal_pdf(z, mean, log_variance)
-        # kl_loss = logpz - logqz_x
         r_loss = self.RL(y_true, y_pred)
-        #print(f"BCE RESULT:\n \t{r_loss}")
         kl_loss = self.KL(mean, log_variance)
-        #print(f"KL LOSS:\n \t{kl_loss}")
-        # print(f"cross_ent shit:\n \t {cross_ent}")
-        #print(f"logpx_z:\n \t {r_loss}")
-        # return -tf.reduce_mean(logpx_z + kl_loss)
-        return -(-kl_loss + r_loss) #r_loss + kl_loss
+        return -(-kl_loss + r_loss)
 
     def create_encoder(self, input_shape: tuple) -> Model:
         inputs = Input(shape=input_shape, name='input_layer')
         x = Conv2D(16, kernel_size=3, strides=2, padding="same", activation="relu", name="conv_1")(inputs)
         x = Conv2D(32, kernel_size=3, strides=2, padding="same", activation="relu", name="conv_2")(x)
-        x = Conv2D(64, kernel_size=3, strides=2, padding="same", activation="relu", name="conv_3")(x)
+        #x = Conv2D(64, kernel_size=3, strides=2, padding="same", activation="relu", name="conv_3")(x)
        # x = Conv2D(128, kernel_size=3, strides=2, padding="same", activation="relu", name="conv_4")(x)
         # x = Conv2D(128, kernel_size=3, strides=2, padding='same', activation="relu", name='conv_4')(x)
         # x = Conv2D(64, kernel_size=3, strides=2, padding='same', activation="relu", name='conv_3')(x)
@@ -138,11 +120,11 @@ class VariationalAutoEncoderModel(Model):
     
     def create_decoder(self, input_shape: tuple):
         inputs = Input(shape=input_shape, name='input_layer')
-        x = Dense(4*4*64, activation="relu", name='dense_1')(inputs)
-        x = Reshape((4, 4, 64), name='reshape_layer')(x)
+        x = Dense(7*7*32, activation="relu", name='dense_1')(inputs)
+        x = Reshape((7, 7, 32), name='reshape_layer')(x)
         #x = Conv2DTranspose(128, kernel_size=3, strides=2, padding='same', activation="relu", name='conv_transpose_1')(x)
-        x = Conv2DTranspose(64, kernel_size=3, strides=2, padding='same', activation="relu", name='conv_transpose_2')(x)
-        x = Cropping2D(cropping=((1,0), (1,0)), name="cropping")(x)
+        #x = Conv2DTranspose(64, kernel_size=3, strides=2, padding='same', activation="relu", name='conv_transpose_2')(x)
+        #x = Cropping2D(cropping=((1,0), (1,0)), name="cropping")(x)
         x = Conv2DTranspose(32, kernel_size=3, strides=2, padding='same', activation="relu", name='conv_transpose_3')(x)
         x = Conv2DTranspose(16, kernel_size=3, strides=2, padding='same', activation="relu", name='conv_transpose_4')(x)
         # x = Cropping2D(cropping=((1,0), (1,0)), name="cropping")(x)
