@@ -21,7 +21,7 @@ class VAE:
         self.force_relearn = force_relearn
         self.file_name = file_name
         self.model = VariationalAutoEncoderModel()
-        self.model.compile(optimizer=keras.optimizers.Adam(learning_rate=.0005),
+        self.model.compile(optimizer=keras.optimizers.Adam(learning_rate=.00025),
                            loss=keras.losses.binary_crossentropy,
                            metrics=['accuracy'], run_eagerly=True)
         self.done_training = False
@@ -49,7 +49,7 @@ class VAE:
                 training=False)
             # Create a callback for stopping if we don't get any progress
             callback = tf.keras.callbacks.EarlyStopping(
-                monitor='loss', min_delta=0.0001, patience=25, verbose=0, restore_best_weights=True
+                monitor='loss', min_delta=0.0001, patience=100, verbose=0, restore_best_weights=True
             )
 
             for channel in range(x_train_all_channels.shape[-1]):
@@ -58,7 +58,7 @@ class VAE:
                 x_test = x_test_all_channels[:, :, :, [channel]]
 
                 self.model.fit(x=x_train, y=x_train, batch_size=2048, epochs=epochs,
-                               validation_data=(x_test, x_test),)# callbacks=[callback])
+                               validation_data=(x_test, x_test), callbacks=[callback])
             # Save weights and leave
             self.model.save_weights(filepath=self.file_name)
             self.done_training = True
@@ -171,7 +171,7 @@ def test():
     verifier = VerificationNet(force_learn=False)
     verifier.train(gen, epochs=100)
     vae = VAE(generator=gen, force_relearn=True)
-    vae.train(epochs=500)
+    vae.train(epochs=1000)
     x_train, y_train = gen.get_full_data_set(training=True)
     decoded_imgs = vae.predict(x_train)
     visualize_pictures(x_train, y_train, decoded_imgs)
