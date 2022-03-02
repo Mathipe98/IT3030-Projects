@@ -1,2 +1,2 @@
-model_checkpoint_path: "verification_model"
-all_model_checkpoint_paths: "verification_model"
+model_checkpoint_path: "vae_anomaly_model"
+all_model_checkpoint_paths: "vae_anomaly_model"
