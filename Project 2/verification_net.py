@@ -41,12 +41,12 @@ class VerificationNet:
         # noinspection PyBroadException
         try:
             self.model.load_weights(filepath=self.file_name)
-            print(f"Read model from file, so I do not retrain")
+            print(f"VER_NET: Read model from file, so I do not retrain.")
             done_training = True
 
         except:
             print(
-                f"Could not read weights for verification_net from file. Must retrain...")
+                f"VER_NET: Could not read weights from file. Must retrain...")
             done_training = False
 
         return done_training

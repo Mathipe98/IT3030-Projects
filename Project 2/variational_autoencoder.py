@@ -1,6 +1,9 @@
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
+import tensorflow.keras.backend as K
 from typing import Any
 from stacked_mnist import StackedMNISTData, DataMode
 from verification_net import VerificationNet
@@ -8,7 +11,6 @@ from tensorflow import keras
 from vae_model import VariationalAutoEncoderModel
 from utils import visualize_pictures
 
-tf.get_logger().setLevel('ERROR')
 seed = 123
 np.random.seed(seed)
 tf.random.set_seed(seed)
@@ -16,7 +18,7 @@ tf.random.set_seed(seed)
 
 class VAE:
 
-    def __init__(self, generator: StackedMNISTData, force_relearn: bool = False, file_name: str = "./vae_model/autoencoder_model") -> None:
+    def __init__(self, generator: StackedMNISTData, force_relearn: bool = False, file_name: str = "./models/vae_model") -> None:
         self.generator = generator
         self.force_relearn = force_relearn
         self.file_name = file_name
@@ -29,11 +31,11 @@ class VAE:
     def load_weights(self):
         try:
             self.model.load_weights(filepath=self.file_name)
-            print(f"Read model from file, so I do not retrain")
+            print(f"VAE: Read model from file, so I do not retrain.")
             done_training = True
 
         except:
-            print(f"Could not read weights for autoencoder from file. Must retrain...")
+            print(f"VAE: Could not read weights for from file. Must retrain...")
             done_training = False
 
         return done_training
@@ -57,7 +59,7 @@ class VAE:
                 x_train = x_train_all_channels[:, :, :, [channel]]
                 x_test = x_test_all_channels[:, :, :, [channel]]
 
-                self.model.fit(x=x_train, y=x_train, batch_size=2048, epochs=epochs,
+                self.model.fit(x=x_train, y=x_train, batch_size=1024, epochs=epochs,
                                validation_data=(x_test, x_test), callbacks=[callback])
             # Save weights and leave
             self.model.save_weights(filepath=self.file_name)
@@ -104,22 +106,9 @@ class VAE:
             # Model is not trained yet...
             raise ValueError("Model is not trained; cannot generate")
         n = 10
-        distribution = self.create_distribution()
-        training_data, _ = self.generator.get_full_data_set()
+        training_data, _ = self.generator.get_full_data_set(training=True)
         no_channels = training_data.shape[-1]
-        random_data = []
-        for _ in range(n):
-            random_sample = []
-            for j in range(len(distribution)):
-                colors = []
-                for _ in range(no_channels):
-                    # Create a random value that is based on the mean, where you either subtract or add a chunk of the original value
-                    random_value = distribution[j] + np.random.choice(
-                        [-1, 1], p=[0.5, 0.5]) * np.random.uniform(low=0.3, high=.4)
-                    colors.append(random_value)
-                random_sample.append(colors)
-            random_data.append(random_sample)
-        random_data = np.array(random_data)
+        random_data = K.random_normal(shape=(n,) + self.model.z_layer_input_shape + (no_channels,), mean=0., stddev=1.)
         decoded_imgs = np.zeros(shape=(n,) + training_data.shape[1:])
         for channel in range(decoded_imgs.shape[-1]):
             decoder_input = random_data[:, :, channel]
@@ -163,20 +152,42 @@ class VAE:
         print(f"Corresponding labels:\n {[anomaly[1] for anomaly in sorted_map[:10]]}")
         visualize_pictures(anomaly_examples, anomaly_labels, filename='./figures/STACK_anomalies_3000.png')
 
-
-def test():
-    print(f"Testing mono accuracy\n")
+def showcase_mono() -> None:
+    print(f"\n======== SHOWCASING MONO-CHROMATIC IMAGES ========\n")
     gen = StackedMNISTData(
         mode=DataMode.MONO_BINARY_COMPLETE, default_batch_size=2048)
     verifier = VerificationNet(force_learn=False)
     verifier.train(gen, epochs=100)
-    vae = VAE(generator=gen, force_relearn=True)
-    vae.train(epochs=1000)
-    x_train, y_train = gen.get_full_data_set(training=True)
-    decoded_imgs = vae.predict(x_train)
-    visualize_pictures(x_train, y_train, decoded_imgs)
+    vae = VAE(generator=gen, force_relearn=False)
+    vae.train(epochs=2000)
+    print(f"\nVisualizing training images...")
+    vae.visualize_training_results()
+    print(f"\nVisualizing testing images...")
+    vae.visualize_testing_results()
     vae.test_accuracy(verifier, tolerance=0.8)
+    vae.generate()
+
+def showcase_stack() -> None:
+    gen = StackedMNISTData(
+        mode=DataMode.COLOR_BINARY_COMPLETE, default_batch_size=2048)
+    verifier = VerificationNet(force_learn=False)
+    verifier.train(gen, epochs=100)
+    vae = VAE(generator=gen, force_relearn=False)
+    vae.train(epochs=2000)
+    vae.visualize_training_results()
+    vae.visualize_testing_results()
+    vae.test_accuracy(verifier, tolerance=0.5)
+    vae.generate()
+
+def showcase_anomalies() -> None:
+    gen = StackedMNISTData(
+        mode=DataMode.MONO_BINARY_MISSING, default_batch_size=2048)
+    verifier = VerificationNet(force_learn=False)
+    verifier.train(gen, epochs=100)
+    vae = VAE(generator=gen, force_relearn=True, file_name='./models/vae_anomaly_model')
+    vae.train(epochs=2000)
 
 
 if __name__ == "__main__":
-    test()
+    showcase_mono()
+    showcase_stack()

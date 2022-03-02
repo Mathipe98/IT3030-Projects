@@ -12,8 +12,8 @@ def pad(label: int, need_padding: bool) -> str:
     return label
 
 def visualize_pictures(x: np.ndarray, y: np.ndarray, decoded_imgs: np.ndarray = None, filename: str=None) -> None:
-    n = 10
-    end = max(0, x.shape[0] - 11)
+    n = 20
+    end = max(0, x.shape[0] - 21)
     if end == 0:
         random_start = 0
     else:

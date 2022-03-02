@@ -24,7 +24,7 @@ class VariationalAutoEncoderModel(Model):
     @tf.function
     def train_step(self, data):
 
-        x, y = data
+        x, _ = data
 
         with tf.GradientTape(persistent=True) as tape:
             mean, log_variance = self.encoder(x, training=True)

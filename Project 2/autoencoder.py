@@ -1,3 +1,5 @@
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
@@ -8,7 +10,6 @@ from ae_model import AutoEncoderModel
 from tensorflow import keras
 from utils import visualize_pictures
 
-tf.get_logger().setLevel('ERROR')
 seed = 123
 np.random.seed(seed)
 tf.random.set_seed(seed)
@@ -16,7 +17,7 @@ tf.random.set_seed(seed)
 
 class AutoEncoder:
 
-    def __init__(self, generator: StackedMNISTData, force_relearn: bool = False, file_name: str = "./autoenc_model/autoencoder_model", model: Any = None) -> None:
+    def __init__(self, generator: StackedMNISTData, force_relearn: bool = False, file_name: str = "./models/ae_model", model: Any = None) -> None:
         self.generator = generator
         self.force_relearn = force_relearn
         self.file_name = file_name
@@ -30,11 +31,11 @@ class AutoEncoder:
     def load_weights(self):
         try:
             self.model.load_weights(filepath=self.file_name)
-            print(f"Read model from file, so I do not retrain")
+            print(f"AE: Read model from file, so I do not retrain.")
             done_training = True
 
         except:
-            print(f"Could not read weights for autoencoder from file. Must retrain...")
+            print(f"AE: Could not read weights from file. Must retrain...")
             done_training = False
 
         return done_training
@@ -90,12 +91,18 @@ class AutoEncoder:
     def visualize_training_results(self) -> None:
         x_train, y_train = self.generator.get_full_data_set(training=True)
         decoded_imgs = self.predict(x_train)
-        visualize_pictures(x_train, y_train, decoded_imgs)
+        no_channels = x_train.shape[-1]
+        filename = './figures/ae_mono_training_results.png' if no_channels == 1 \
+            else './figures/ae_colour_training_results.png'
+        visualize_pictures(x_train, y_train, decoded_imgs, filename=filename)
 
     def visualize_testing_results(self) -> None:
         x_test, y_test = self.generator.get_full_data_set(training=False)
         decoded_imgs = self.predict(x_test)
-        visualize_pictures(x_test, y_test, decoded_imgs)
+        no_channels = x_test.shape[-1]
+        filename = './figures/ae_mono_training_results.png' if no_channels == 1 \
+            else './figures/ae_colour_training_results.png'
+        visualize_pictures(x_test, y_test, decoded_imgs, filename=filename)
 
     def test_accuracy(self, verifier: VerificationNet, tolerance: float = 0.8) -> None:
         x_test, y_test = self.generator.get_full_data_set(training=False)
@@ -164,84 +171,96 @@ class AutoEncoder:
             ax.get_yaxis().set_visible(False)
         plt.show()
 
-    def anomaly_detection(self) -> None:
+    def anomaly_detection(self, filename: str) -> None:
         if not self.done_training:
             # Model is not trained yet...
             raise ValueError("Model is not trained; cannot detect anomalies")
-        bce = keras.losses.BinaryCrossentropy()
+        bce = keras.losses.BinaryCrossentropy(reduction=tf.keras.losses.Reduction.NONE)
         testing_data, testing_labels = self.generator.get_full_data_set(
             training=False)
         no_channels = testing_data.shape[-1]
-        example_loss_map = []
-        for i in range(len(testing_data)):
-            print(i)
-            example = testing_data[i]
-            label = testing_labels[i]
-            example = example[np.newaxis, :]
-            reconstruction = np.zeros(shape=(testing_data.shape[1:]))
-            for channel in range(no_channels):
-                a = self.model.predict(example[:,:,:,[channel]])
-                reconstruction[:,:,[channel]] += a[0,:,:,:]
-            loss = bce(example, reconstruction).numpy()
-            example_loss_map.append((reconstruction, label, loss))
-            if i == 3000:
-                break
-        sorted_map = sorted(example_loss_map, key=lambda tup: tup[2], reverse=True)
-        anomaly_examples = np.array([anomaly[0] for anomaly in sorted_map[:10]])
-        anomaly_labels = np.array([anomaly[1] for anomaly in sorted_map[:10]])
-        print(f"Highest losses:\n {[anomaly[2] for anomaly in sorted_map[:10]]}")
-        print(f"Corresponding labels:\n {[anomaly[1] for anomaly in sorted_map[:10]]}")
-        visualize_pictures(anomaly_examples, anomaly_labels, filename='./figures/STACK_anomalies_3000.png')
+        losses = np.zeros(shape=(testing_data.shape[0], 2))
+        for channel in range(no_channels):
+            channel_labels = []
+            for label in testing_labels:
+                if len(str(label)) < channel + 1:
+                    channel_labels.append(0)
+                else:
+                    channel_labels.append(int(str(label)[-1 - channel]) * 10 ** channel)
+            channel_labels = np.array(channel_labels)[:, np.newaxis]
+            channel_examples = testing_data[:,:,:,[channel]]
+            predictions = self.predict(channel_examples)
+            prediction_losses = tf.reduce_mean(bce(channel_examples, predictions), axis=[1,2]).numpy()[:, np.newaxis]
+            losses_w_labels = np.hstack((prediction_losses, channel_labels))
+            losses += losses_w_labels
+        sorted_array = losses[losses[:,0].argsort()][::-1]
+        anomaly_losses = sorted_array[:20,0]
+        anomaly_labels = sorted_array[:20,1].astype(int)
+        anomaly_examples = []
+        for label in anomaly_labels:
+            indeces = np.where(testing_labels == label)
+            example_index = indeces[0][0]
+            verify_label = testing_labels[example_index]
+            assert verify_label == label, "Index of example doesn't match"
+            anomaly_examples.append(testing_data[example_index])
+        anomaly_examples = np.array(anomaly_examples)
+        anomaly_recreations = self.predict(anomaly_examples)
+        print(f"Highest losses:\n {anomaly_losses}")
+        print(f"Corresponding labels:\n {anomaly_labels}")
+        visualize_pictures(anomaly_examples, anomaly_labels, anomaly_recreations, filename=filename)
 
 
-def test_mono() -> None:
-    print(f"Testing mono accuracy\n")
+def showcase_mono() -> None:
+    print(f"\n======== SHOWCASING MONO-CHROMATIC IMAGES ========\n")
     gen = StackedMNISTData(
         mode=DataMode.MONO_BINARY_COMPLETE, default_batch_size=2048)
     verifier = VerificationNet(force_learn=False)
     verifier.train(gen, epochs=100)
     ae = AutoEncoder(generator=gen, force_relearn=False)
     ae.train(epochs=1000)
+    print(f"\nVisualizing training images...")
     ae.visualize_training_results()
+    print(f"\nVisualizing testing images...\n")
     ae.visualize_testing_results()
-    ae.test_accuracy(verifier=verifier)
+    print(f"\nCalculating accuracy..\n")
+    ae.test_accuracy(verifier=verifier, tolerance=0.8)
+    print(f"\nGenerating images..\n")
     ae.generate()
 
-def test_color() -> None:
-    print(f"Testing colour (stack) accuracy\n")
+def showcase_colour() -> None:
+    print(f"\n======== SHOWCASING COLOUR IMAGES ========\n")
     gen = StackedMNISTData(
         mode=DataMode.COLOR_BINARY_COMPLETE, default_batch_size=2048)
     verifier = VerificationNet(force_learn=False)
     verifier.train(gen, epochs=100)
-    ae = AutoEncoder(generator=gen, force_relearn=False, file_name='./autoenc_model/autoencoder_STACK')
+    ae = AutoEncoder(generator=gen, force_relearn=False)
     ae.train(epochs=1000)
+    print(f"\nVisualizing training images...")
     ae.visualize_training_results()
+    print(f"\nVisualizing testing images...\n")
     ae.visualize_testing_results()
+    print(f"\nCalculating accuracy..\n")
     ae.test_accuracy(verifier=verifier, tolerance=0.5)
+    print(f"\nGenerating images..\n")
     ae.generate()
 
-def test_mono_anomaly() -> None:
-    gen = StackedMNISTData(
+def showcase_anomalies() -> None:
+    print(f"\n======== SHOWCASING ANOMALY DETECTION ========\n")
+    gen1 = StackedMNISTData(
         mode=DataMode.MONO_BINARY_MISSING, default_batch_size=2048)
-    verifier = VerificationNet(force_learn=False)
-    verifier.train(gen, epochs=100)
-    ae = AutoEncoder(generator=gen, force_relearn=False,
-                     file_name="./autoenc_model/anomaly_detector")
-    ae.train(epochs=500)
-    ae.anomaly_detection()
-
-def test_color_anomaly() -> None:
-    gen = StackedMNISTData(
+    gen2 = StackedMNISTData(
         mode=DataMode.COLOR_BINARY_MISSING, default_batch_size=2048)
-    verifier = VerificationNet(force_learn=False)
-    verifier.train(gen, epochs=100)
-    ae = AutoEncoder(generator=gen, force_relearn=False,
-                     file_name="./autoenc_model/anomaly_detector")
-    ae.train(epochs=500)
-    ae.anomaly_detection()
+    ae1 = AutoEncoder(generator=gen1, force_relearn=False, file_name='./models/ae_anomaly_model')
+    ae1.train(epochs=1000)
+    ae2 = AutoEncoder(generator=gen2, force_relearn=False, file_name='./models/ae_anomaly_model')
+    ae2.train(epochs=1000)
+    print(f"\nDetecting mono-chromatic anomalies..\n")
+    ae1.anomaly_detection(filename='./figures/ae_mono_anomalies.png')
+    print(f"\nDetecting colour anomalies..\n")
+    ae2.anomaly_detection(filename='./figures/ae_colour_anomalies.png')
 
 
 if __name__ == "__main__":
-    # test_anomaly_detection()
-    test_mono()
-    # test_color()
+    showcase_mono()
+    showcase_colour()
+    showcase_anomalies()
