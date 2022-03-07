@@ -105,7 +105,7 @@ class VAE:
         if not self.done_training:
             # Model is not trained yet...
             raise ValueError("Model is not trained; cannot generate")
-        n = 10
+        n = 20
         training_data, _ = self.generator.get_full_data_set(training=True)
         no_channels = training_data.shape[-1]
         random_data = K.random_normal(shape=(n,) + self.model.z_layer_input_shape + (no_channels,), mean=0., stddev=1.)
@@ -127,53 +127,74 @@ class VAE:
         if not self.done_training:
             # Model is not trained yet...
             raise ValueError("Model is not trained; cannot detect anomalies")
-        n_random_samples = 1000
+        n_random_samples = 10000
         bce = keras.losses.BinaryCrossentropy(reduction=tf.keras.losses.Reduction.NONE)
         testing_data, testing_labels = self.generator.get_full_data_set(
             training=False)
         n_testing_examples = testing_data.shape[0]
         no_channels = testing_data.shape[-1]
         probability_map = np.ones(shape=(n_testing_examples, 2))
+        probability_map[:,1] = 0
         for channel in range(no_channels):
             channel_labels = []
             for label in testing_labels:
                 if len(str(label)) < channel + 1:
                     channel_labels.append(0)
                 else:
-                    channel_labels.append(int(str(label)[-1 - channel]) * 10 ** channel)
+                    label = int(str(label)[-1 - channel]) * 10 ** channel
+                    channel_labels.append(label)
             channel_labels = np.array(channel_labels)
             # We need to calculate the predicted outcome of the normal vector
             channel_probabilities = []
             for i in range(testing_data.shape[0]):
                 print(i)
+                if i == n_testing_examples:
+                    break
                 normal_vector = K.random_normal(shape=(n_random_samples,) + self.model.z_layer_input_shape, mean=0., stddev=1.)
                 normal_vector_outputs = self.model.decoder.predict(normal_vector)
                 image = testing_data[i]
                 label = testing_labels[i]
-                # Shape is 28x28x1n_testing_examples
+                # Reshaped (repeated) into (n_testing_examples)x28x28x1
                 image_repeated = np.repeat(image.reshape(-1, *image.shape), n_random_samples, axis=0).astype(float)
-                logpx_z = -bce(normal_vector_outputs, image_repeated)
-                px_z = np.exp(logpx_z)
-                px = np.mean(px_z)
+                logpx_z = bce(normal_vector_outputs, image_repeated)
+                # logpx_z = -bce(normal_vector_outputs, image_repeated)
+                # px_z = np.exp(logpx_z)
+                # px = np.mean(px_z)
+                logpx = -tf.reduce_mean(logpx_z, axis=[0,1,2])
+                px = np.exp(logpx)
                 channel_probabilities.append(px)
             channel_probabilities = np.array(channel_probabilities)
             probability_map[:,0] *= channel_probabilities
-            probability_map[:,1] += channel_labels
+            probability_map[:,1] += channel_labels[:n_testing_examples]
         sorted_array = probability_map[probability_map[:,0].argsort()]
         anomaly_losses = sorted_array[:20,0]
         anomaly_labels = sorted_array[:20,1].astype(int)
         anomaly_examples = []
+        reverse_anomaly_losses = sorted_array[::-1][:20,0]
+        reverse_anomaly_labels = sorted_array[::-1][:20,1].astype(int)
+        reverse_anomaly_examples = []
         for label in anomaly_labels:
             indeces = np.where(testing_labels == label)
             example_index = indeces[0][0]
             verify_label = testing_labels[example_index]
             assert verify_label == label, "Index of example doesn't match"
             anomaly_examples.append(testing_data[example_index])
+        for label in reverse_anomaly_labels:
+            indeces = np.where(testing_labels == label)
+            example_index = indeces[0][0]
+            verify_label = testing_labels[example_index]
+            reverse_anomaly_examples.append(testing_data[example_index])
         anomaly_examples = np.array(anomaly_examples)
         anomaly_recreations = self.predict(anomaly_examples)
+        reverse_anomaly_examples = np.array(reverse_anomaly_examples)
+        reverse_anomaly_recreations = self.predict(reverse_anomaly_examples)
         print(f"Lowest probabilities:\n {anomaly_losses}")
         print(f"Corresponding labels:\n {anomaly_labels}")
         visualize_pictures(anomaly_examples, anomaly_labels, anomaly_recreations, filename=filename)
+        print(f"Highest probabilities:\n {reverse_anomaly_losses}")
+        print(f"Corresponding labels:\n {reverse_anomaly_labels}")
+        visualize_pictures(reverse_anomaly_examples, reverse_anomaly_labels, reverse_anomaly_recreations, filename=f'{filename[:-4]}_REVERSE.png')
+
 
 def showcase_mono() -> None:
     print(f"\n======== SHOWCASING MONO-CHROMATIC IMAGES ========\n")
@@ -182,7 +203,7 @@ def showcase_mono() -> None:
     verifier = VerificationNet(force_learn=False)
     verifier.train(gen, epochs=100)
     vae = VAE(generator=gen, force_relearn=False)
-    vae.train(epochs=1000)
+    vae.train(epochs=20000)
     print(f"\nVisualizing training images...")
     vae.visualize_training_results()
     print(f"\nVisualizing testing images...\n")
@@ -220,12 +241,12 @@ def showcase_anomalies() -> None:
     vae2 = VAE(generator=gen2, force_relearn=False, file_name='./models/vae_anomaly_model')
     vae2.train(epochs=10000)
     print(f"\nDetecting mono-chromatic anomalies..\n")
-    vae1.anomaly_detection(filename='./figures/vae_mono_anomalies.png')
+    vae1.anomaly_detection(filename='./figures/not_individual_pixels_vae_mono_anomalies.png')
     print(f"\nDetecting colour anomalies..\n")
-    #vae2.anomaly_detection(filename='./figures/vae_colour_anomalies.png')
+    vae2.anomaly_detection(filename='./figures/not_individual_pixels_vae_colour_anomalies.png')
 
 
 if __name__ == "__main__":
     # showcase_mono()
-    # showcase_stack()
+    # showcase_colour()
     showcase_anomalies()

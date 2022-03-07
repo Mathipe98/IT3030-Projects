@@ -41,4 +41,4 @@ def visualize_pictures(x: np.ndarray, y: np.ndarray, decoded_imgs: np.ndarray = 
             ax.get_yaxis().set_visible(False)
     if filename is not None:
         plt.savefig(filename)
-    plt.show()
+    #plt.show()
