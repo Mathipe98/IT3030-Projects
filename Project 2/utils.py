@@ -11,7 +11,7 @@ def pad(label: int, need_padding: bool) -> str:
         label = "0" + label
     return label
 
-def visualize_pictures(x: np.ndarray, y: np.ndarray, decoded_imgs: np.ndarray = None, filename: str=None) -> None:
+def visualize_pictures(x: np.ndarray, y: np.ndarray=None, decoded_imgs: np.ndarray = None, filename: str=None) -> None:
     n = 20
     end = max(0, x.shape[0] - 21)
     if end == 0:
@@ -25,7 +25,8 @@ def visualize_pictures(x: np.ndarray, y: np.ndarray, decoded_imgs: np.ndarray = 
         ax = plt.subplot(2, n, i+1)
         original = x[i + random_start].astype(np.float64)
         plt.imshow(original)
-        plt.title(pad(y[i + random_start], need_padding))
+        if y is not None:
+            plt.title(pad(y[i + random_start], need_padding))
         plt.gray()
         ax.get_xaxis().set_visible(False)
         ax.get_yaxis().set_visible(False)
@@ -35,10 +36,11 @@ def visualize_pictures(x: np.ndarray, y: np.ndarray, decoded_imgs: np.ndarray = 
             ax = plt.subplot(2, n, i + 1 + n)
             copy = decoded_imgs[i + random_start]
             plt.imshow(copy)
-            plt.title(pad(y[i + random_start], need_padding))
+            if y is not None:
+                plt.title(pad(y[i + random_start], need_padding))
             plt.gray()
             ax.get_xaxis().set_visible(False)
             ax.get_yaxis().set_visible(False)
     if filename is not None:
         plt.savefig(filename)
-    #plt.show()
+    plt.show()

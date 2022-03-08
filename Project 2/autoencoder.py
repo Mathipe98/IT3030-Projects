@@ -3,7 +3,7 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import Any
+from typing import Any, Tuple
 from stacked_mnist import StackedMNISTData, DataMode
 from verification_net import VerificationNet
 from ae_model import AutoEncoderModel
@@ -115,44 +115,63 @@ class AutoEncoder:
         print(f"Predictability: {100*pred:.2f}%")
         print(f"Accuracy: {100 * acc:.2f}%")
 
-    def create_distribution(self) -> np.ndarray:
+    def create_distribution(self) -> Tuple[np.ndarray, np.ndarray]:
+        """This method calculates the mean and standard deviation for each of the 
+        32 outputs of the encoder. In other words, the encoder has a latent dim of
+        32. For each of these 32 elements, this method calculates the individual mean
+        and standard deviation by running the training and testing data through
+        the encoder. Thus when generating random samples, the values are extracted
+        by randomly getting each value individually by their respective mean/stddev values.
+
+        Raises:
+            ValueError: Error to be thrown if model is not yet trained
+
+        Returns:
+            Tuple[np.ndarray, np.ndarray]: Arrays containing the mean and stddev for the 32 latent values
+        """
         if not self.done_training:
             # Model is not trained yet...
             raise ValueError("Model is not trained; cannot generate")
         training_data, _ = self.generator.get_full_data_set(training=True)
-        # For now: only 1 channel
+        testing_data, _ = self.generator.get_full_data_set(training=False)
         encoder_output_elements = self.model.encoder.layers[-1].output_shape[-1]
-        encoder_output_shape = (
+        training_encoder_output_shape = (
             training_data.shape[0], encoder_output_elements)
+        testing_encoder_output_shape = (
+            testing_data.shape[0], encoder_output_elements)
         no_channels = training_data.shape[-1]
-        encoded_predictions = np.zeros(shape=encoder_output_shape)
+        encoded_predictions = np.zeros(shape=training_encoder_output_shape)
+        testing_encoded = np.zeros(shape=testing_encoder_output_shape)
         for channel in range(no_channels):
-            encoded = self.model.encoder.predict(
-                training_data[:, :, :, [channel]]) * 1/no_channels
-            encoded_predictions += encoded
-        # Take the mean of all the encoder predictions for use in the sampling
-        # I.e. we now have the average value of all encodings of all inputs, and we will use this
-        # as a basis for drawing random samples for Z
-        distribution = np.mean(encoded_predictions, axis=0)
-        return distribution
+            encoded_training = self.model.encoder.predict(
+                training_data[:, :, :, [channel]])
+            encoded_predictions += encoded_training
+            encoded_testing = self.model.encoder.predict(testing_data[:,:,:,[channel]])
+            testing_encoded += encoded_testing
+        # Calculate the mean and standard deviation
+        mu = np.mean(encoded_predictions, axis=0)
+        deviation_1 = testing_encoded - mu
+        deviation_2 = abs(deviation_1)**2
+        deviation_sum = np.sum(deviation_2, axis=0)
+        stddev = np.sqrt(deviation_sum / training_data.shape[0])
+        return mu, stddev
 
-    def generate(self) -> None:
+    def generate(self, filename) -> None:
         if not self.done_training:
             # Model is not trained yet...
             raise ValueError("Model is not trained; cannot generate")
-        n = 10
-        distribution = self.create_distribution()
+        n = 100
+        mu, stddev = self.create_distribution()
         training_data, _ = self.generator.get_full_data_set()
         no_channels = training_data.shape[-1]
         random_data = []
         for _ in range(n):
             random_sample = []
-            for j in range(len(distribution)):
+            for j in range(mu.shape[0]):
                 colors = []
                 for _ in range(no_channels):
-                    # Create a random value that is based on the mean, where you either subtract or add a chunk of the original value
-                    random_value = distribution[j] + np.random.choice(
-                        [-1, 1], p=[0.5, 0.5]) * np.random.uniform(low=0.3, high=.4)
+                    # Add a random value based on mean and standard deviation of the output of the model
+                    random_value = np.random.normal(loc=mu[j], scale=stddev[j]) / no_channels
                     colors.append(random_value)
                 random_sample.append(colors)
             random_data.append(random_sample)
@@ -162,14 +181,7 @@ class AutoEncoder:
             decoder_input = random_data[:, :, channel]
             output = self.model.decoder.predict(decoder_input)
             decoded_imgs[:, :, :, channel] += output[:, :, :, 0]
-        plt.figure(figsize=(20, 4))
-        for i in range(1, n + 1):
-            ax = plt.subplot(2, n, i)
-            plt.imshow(decoded_imgs[i-1])
-            plt.gray()
-            ax.get_xaxis().set_visible(False)
-            ax.get_yaxis().set_visible(False)
-        plt.show()
+        visualize_pictures(x=decoded_imgs, filename=filename)
 
     def anomaly_detection(self, filename: str) -> None:
         if not self.done_training:
@@ -225,7 +237,7 @@ def showcase_mono() -> None:
     print(f"\nCalculating accuracy..\n")
     ae.test_accuracy(verifier=verifier, tolerance=0.8)
     print(f"\nGenerating images..\n")
-    ae.generate()
+    ae.generate(filename='./figures/ae_mono_generation.png')
 
 def showcase_colour() -> None:
     print(f"\n======== SHOWCASING COLOUR IMAGES ========\n")
@@ -242,7 +254,7 @@ def showcase_colour() -> None:
     print(f"\nCalculating accuracy..\n")
     ae.test_accuracy(verifier=verifier, tolerance=0.5)
     print(f"\nGenerating images..\n")
-    ae.generate()
+    ae.generate(filename='./figures/ae_colour_generation.png')
 
 def showcase_anomalies() -> None:
     print(f"\n======== SHOWCASING ANOMALY DETECTION ========\n")

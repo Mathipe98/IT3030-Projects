@@ -101,7 +101,7 @@ class VAE:
         print(f"Predictability: {100*pred:.2f}%")
         print(f"Accuracy: {100 * acc:.2f}%")
     
-    def generate(self) -> None:
+    def generate(self, filename: str) -> None:
         if not self.done_training:
             # Model is not trained yet...
             raise ValueError("Model is not trained; cannot generate")
@@ -114,14 +114,7 @@ class VAE:
             decoder_input = random_data[:, :, channel]
             output = self.model.decoder.predict(decoder_input)
             decoded_imgs[:, :, :, channel] += output[:, :, :, 0]
-        plt.figure(figsize=(20, 4))
-        for i in range(1, n + 1):
-            ax = plt.subplot(2, n, i)
-            plt.imshow(decoded_imgs[i-1])
-            plt.gray()
-            ax.get_xaxis().set_visible(False)
-            ax.get_yaxis().set_visible(False)
-        plt.show()
+        visualize_pictures(x=decoded_imgs, filename=filename)
 
     def anomaly_detection(self, filename: str) -> None:
         if not self.done_training:
@@ -157,9 +150,6 @@ class VAE:
                 # Reshaped (repeated) into (n_testing_examples)x28x28x1
                 image_repeated = np.repeat(image.reshape(-1, *image.shape), n_random_samples, axis=0).astype(float)
                 logpx_z = bce(normal_vector_outputs, image_repeated)
-                # logpx_z = -bce(normal_vector_outputs, image_repeated)
-                # px_z = np.exp(logpx_z)
-                # px = np.mean(px_z)
                 logpx = -tf.reduce_mean(logpx_z, axis=[0,1,2])
                 px = np.exp(logpx)
                 channel_probabilities.append(px)
@@ -211,7 +201,7 @@ def showcase_mono() -> None:
     print(f"\nCalculating accuracy..\n")
     vae.test_accuracy(verifier=verifier, tolerance=0.8)
     print(f"\nGenerating images..\n")
-    vae.generate()
+    vae.generate(filename='./figures/vae_mono_generation.png')
 
 def showcase_colour() -> None:
     print(f"\n======== SHOWCASING COLOUR IMAGES ========\n")
@@ -228,7 +218,7 @@ def showcase_colour() -> None:
     print(f"\nCalculating accuracy..\n")
     vae.test_accuracy(verifier=verifier, tolerance=0.5)
     print(f"\nGenerating images..\n")
-    vae.generate()
+    vae.generate(filename='./figures/vae_colour_generation.png')
 
 def showcase_anomalies() -> None:
     print(f"\n======== SHOWCASING ANOMALY DETECTION ========\n")
@@ -247,6 +237,6 @@ def showcase_anomalies() -> None:
 
 
 if __name__ == "__main__":
-    # showcase_mono()
-    # showcase_colour()
-    showcase_anomalies()
+    showcase_mono()
+    showcase_colour()
+    # showcase_anomalies()
