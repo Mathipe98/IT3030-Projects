@@ -155,10 +155,11 @@ class Agent:
             result = model(df_slice).numpy().reshape(df_slice.shape[1], -1)
             # We now have shape [timesteps, predictions]. Set this as previous_y
             df.loc[idx1+1: idx2, 'previous_y'] = result
-            results.append(result)
+            # Finally, only append the very last predicted result, as this is the final timestep prediction
+            results.append(result[-1,0])
         # Turn results into a dataframe with column "y"
         results = pd.DataFrame(data=results, columns=['y'])
-        return self.transform_y(results)
+        return results
 
     def visualize_results(self, y_true: pd.DataFrame, y_pred: np.ndarray, start_index: int = 1) -> None:
         results = pd.DataFrame(
@@ -179,5 +180,6 @@ if __name__ == '__main__':
               )
     print(df_val.head(20))
     model = get_lstm_model()
-    agent.predict_2hrs(df_val, model)
+    results = agent.predict_2hrs(df_val, model)
+    print(results)
     # agent.train(df_train, model, epochs=5)
