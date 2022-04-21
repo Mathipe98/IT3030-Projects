@@ -159,6 +159,7 @@ class Agent:
             results.append(result[-1,0])
         # Turn results into a dataframe with column "y"
         results = pd.DataFrame(data=results, columns=['y'])
+        # TODO: actually return scaled version
         return results
 
     def visualize_results(self, y_true: pd.DataFrame, y_pred: np.ndarray, start_index: int = 1) -> None:
