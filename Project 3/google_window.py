@@ -1,64 +1,141 @@
-import os
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
-
 import numpy as np
 import pandas as pd
+from sklearn.preprocessing import MinMaxScaler
 import tensorflow as tf
+
+import matplotlib.pyplot as plt
 
 from model import get_lstm_model
 
 
 class WindowGenerator():
-    def __init__(self, n_prev: int, n_preds: int, resolution: int,
-                 start_index: int = 1, batch_size: int = 32, target: str = "y"):
-        self.n_prev = n_prev
-        self.n_preds = n_preds
-        self.resolution = resolution
-        self.start_index = start_index
-        self.batch_size = batch_size
-        self.target = target
-    
-    def make_training_dataset(self, data: pd.DataFrame) -> tf.data.Dataset:
-        print("Generating training dataset, therefore start_index has no effect.")
-        x = data.drop(columns=self.target)
-        y = data[self.target]
-        # Extract all rows apart from the very last one (because we don't have its "correct" value)
-        features = np.array(x, dtype=np.float32)[:-1]
-        labels = np.array(y, dtype=np.float32)
-        labels = np.roll(labels, shift=-self.n_prev, axis=0)[:-1]
-        # Roll the labels array s.t. they (timewise) match the inputs, i.e. that features
-        # contain examples t_0 -> t_k, and y then contains t_k+1
+    def __init__(self, input_width, label_width, shift,
+                 train_df, val_df, test_df,
+                 label_columns=None):
+        # Store the raw data.
+        self.train_df = train_df
+        self.val_df = val_df
+        self.test_df = test_df
+
+        # Work out the label column indices.
+        self.label_columns = label_columns
+        if label_columns is not None:
+            self.label_columns_indices = {name: i for i, name in
+                                          enumerate(label_columns)}
+        self.column_indices = {name: i for i, name in
+                               enumerate(train_df.columns)}
+
+        # Work out the window parameters.
+        self.input_width = input_width
+        self.label_width = label_width
+        self.shift = shift
+
+        self.total_window_size = input_width + shift
+
+        self.input_slice = slice(0, input_width)
+        self.input_indices = np.arange(self.total_window_size)[
+            self.input_slice]
+
+        self.label_start = self.total_window_size - self.label_width
+        self.labels_slice = slice(self.label_start, None)
+        self.label_indices = np.arange(self.total_window_size)[
+            self.labels_slice]
+
+    def split_window(self, features):
+        inputs = features[:, self.input_slice, :]
+        labels = features[:, self.labels_slice, :]
+        if self.label_columns is not None:
+            labels = tf.stack(
+                [labels[:, :, self.column_indices[name]]
+                    for name in self.label_columns],
+                axis=-1)
+
+        # Slicing doesn't preserve static shape information, so set the shapes
+        # manually. This way the `tf.data.Datasets` are easier to inspect.
+        inputs.set_shape([None, self.input_width, None])
+        labels.set_shape([None, self.label_width, None])
+
+        return inputs, labels
+
+    def plot(self, model=None, plot_col='T (degC)', max_subplots=3):
+        inputs, labels = self.example
+        plt.figure(figsize=(12, 8))
+        plot_col_index = self.column_indices[plot_col]
+        max_n = min(max_subplots, len(inputs))
+        for n in range(max_n):
+            plt.subplot(max_n, 1, n+1)
+            plt.ylabel(f'{plot_col} [normed]')
+            plt.plot(self.input_indices, inputs[n, :, plot_col_index],
+                     label='Inputs', marker='.', zorder=-10)
+
+            if self.label_columns:
+                label_col_index = self.label_columns_indices.get(
+                    plot_col, None)
+            else:
+                label_col_index = plot_col_index
+
+            if label_col_index is None:
+                continue
+
+            plt.scatter(self.label_indices, labels[n, :, label_col_index],
+                        edgecolors='k', label='Labels', c='#2ca02c', s=64)
+            if model is not None:
+                predictions = model(inputs)
+                plt.scatter(self.label_indices, predictions[n, :, label_col_index],
+                            marker='X', edgecolors='k', label='Predictions',
+                            c='#ff7f0e', s=64)
+
+            if n == 0:
+                plt.legend()
+
+        plt.xlabel('Time [h]')
+
+    def make_dataset(self, data):
+        data = np.array(data, dtype=np.float32)
         ds = tf.keras.utils.timeseries_dataset_from_array(
-            data=features,
-            targets=labels,
-            sequence_length=self.n_prev,
-            shuffle=False,
-            batch_size=self.batch_size)
+            data=data,
+            targets=None,
+            sequence_length=self.total_window_size,
+            sequence_stride=1,
+            shuffle=True,
+            batch_size=64)
+
+        ds = ds.map(self.split_window)
+
         return ds
 
-    def make_testing_dataset(self, data: pd.DataFrame) -> tf.data.Dataset:
-        idx1 = max(self.start_index - self.n_prev, 0)
-        idx2 = min(self.start_index, len(data))
-        # Print indeces
-        print(f"idx1: {idx1}, idx2: {idx2}")
-        x = data.drop(columns=self.target)[idx1:idx2]
-        print(f"Resulting x: {x}")
-        features = np.array(x, dtype=np.float32)
-        print(f"Actual target with these indices: {data[self.target][idx2]}")
-        if self.n_prev < self.start_index:
-            seq_len = self.n_prev
-        else:
-            seq_len = self.start_index
-        ds = tf.keras.utils.timeseries_dataset_from_array(
-            data=features,
-            targets=None,
-            sequence_length=seq_len,
-            shuffle=False,
-            batch_size=self.batch_size)
-        return ds
+    @property
+    def train(self):
+        return self.make_dataset(self.train_df)
+
+
+    @property
+    def val(self):
+        return self.make_dataset(self.val_df)
+
+
+    @property
+    def test(self):
+        return self.make_dataset(self.test_df)
+
+
+    @property
+    def example(self):
+        """Get and cache an example batch of `inputs, labels` for plotting."""
+        result = getattr(self, '_example', None)
+        if result is None:
+            # No example batch was found, so get one from the `.train` dataset
+            result = next(iter(self.train))
+            # And cache it for next time
+            self._example = result
+        return result
 
     def __repr__(self):
-        return ''
+        return '\n'.join([
+            f'Total window size: {self.total_window_size}',
+            f'Input indices: {self.input_indices}',
+            f'Label indices: {self.label_indices}',
+            f'Label column name(s): {self.label_columns}'])
 
 
 if __name__ == '__main__':
@@ -66,19 +143,17 @@ if __name__ == '__main__':
         './Project 3/no1_train.csv').drop("start_time", axis=1)
     df_val = pd.read_csv(
         './Project 3/no1_validation.csv').drop("start_time", axis=1)
-    print(df_val.head(11))
-    w2 = WindowGenerator(n_prev=50, n_preds=50, resolution=5,
-                         start_index=50, batch_size=64, target='y')
-    print(f"df_val index 10 answer: {df_val['y'][10]}")
-    training_ds = w2.make_training_dataset(df_train[0:100])
-    testing_ds = w2.make_testing_dataset(df_val)
+    scaler = MinMaxScaler()
+    scaled_train = scaler.fit_transform(df_train)
+    # convert it back to dataframe
+    scaled_train = pd.DataFrame(scaled_train, columns=df_train.columns)
+    window = WindowGenerator(input_width=24, label_width=24, shift=24, train_df=scaled_train, val_df=None, test_df=None, label_columns=['y'])
     model = get_lstm_model()
-    print(list(testing_ds))
-    # model.fit(training_ds, epochs=1)
-    for val_tensor in testing_ds:
-        print("H")
-        print(val_tensor.shape)
-        # print(b.shape)
-        result = model(val_tensor).numpy().shape
-        print(f"Result: {result}")
-        break
+    print('Input shape:', window.example[0].shape)
+    print('Output shape:', model(window.example[0]).shape)
+    history = model.fit(window.train, epochs=1)
+    loss_per_epoch = history.history['loss']
+    plt.plot(range(len(loss_per_epoch)),loss_per_epoch)
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.show()
