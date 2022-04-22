@@ -48,8 +48,8 @@ class Agent:
 
     def setup_scalers(self) -> Tuple[MinMaxScaler, MinMaxScaler]:
         # Create scalers for x and y
-        x_scaler = StandardScaler()
-        y_scaler = StandardScaler()
+        x_scaler = MinMaxScaler(feature_range=(self.min_scale, self.max_scale))
+        y_scaler = MinMaxScaler(feature_range=(self.min_scale, self.max_scale))
         return x_scaler, y_scaler
     
     def add_previous_y_to_df(self, df: pd.DataFrame, training: bool=True) -> pd.DataFrame:
@@ -94,6 +94,8 @@ class Agent:
         # Scale x and y
         x = self.transform_x(x)
         y = self.transform_y(y)
+        if self.verbose:
+            print(f"y after transformation in making training dataset: {y}")
         # Extract all rows apart from the very last one (because we don't have its "correct" value)
         features = np.array(x, dtype=np.float32)[:-1]
         labels = np.array(y, dtype=np.float32)
@@ -172,9 +174,9 @@ class Agent:
         # Return the inverse transformed version
         return self.inverse_transform_y(results)
 
-    def visualize_results(self, y_true: pd.DataFrame, y_pred: np.ndarray, start_index: int = 1) -> None:
+    def visualize_results(self, y_true: pd.Series, y_pred: np.ndarray) -> None:
         results = pd.DataFrame(
-            {'y_true': y_true.values[start_index:start_index+self.n_preds], 'y_pred': y_pred.ravel()})
+            {'y_true': y_true.values[self.start_index:self.start_index+self.n_preds], 'y_pred': y_pred.ravel()})
         results.plot(figsize=(20, 8))
 
 
@@ -193,7 +195,7 @@ if __name__ == '__main__':
     df_train = agent.add_previous_y_to_df(df_train, training=True)
     df_val = agent.add_previous_y_to_df(df_val, training=False)
     agent.fit_scalers_to_df(df_train)
-    # agent.train(df_train, model=model, epochs=1)
+    agent.train(df_train, model=model, epochs=1)
     testing_ds = agent.make_testing_dataset(df_val.drop(columns="y"))
     results = agent.predict_2hrs(df_val, model)
     print(results)
