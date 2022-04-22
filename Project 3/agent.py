@@ -149,6 +149,9 @@ class Agent:
             patience=3,
             restore_best_weights=False
         )
+        if self.resolution == 15:
+            # Drop 2 out of every 3 rows
+            df = df.iloc[::3]
         ds = self.make_training_dataset(df)
         return model.fit(ds, epochs=epochs, callbacks=[callbacks])
 
@@ -157,6 +160,9 @@ class Agent:
             model = get_lstm_model()
         if 'y' in df.columns:
             df = df.drop('y', axis=1)
+        if self.resolution == 15:
+            # Drop 2 out of every 3 rows
+            df = df.iloc[::3]
         results = []
         ds = self.make_testing_dataset(df)
         # model_input has shape [batch_size, timesteps, features]
