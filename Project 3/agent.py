@@ -163,6 +163,8 @@ class Agent:
         if self.resolution == 15:
             # Drop 2 out of every 3 rows
             df = df.iloc[::3]
+            # TODO: make sure to adjust the index of the prediction when cutting 2/3rds of the dataframe
+            # Right now, this produces an error.
         results = []
         ds = self.make_testing_dataset(df)
         # model_input has shape [batch_size, timesteps, features]
