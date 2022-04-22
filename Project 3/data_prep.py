@@ -67,6 +67,18 @@ class Agent:
         x, y = df.drop("y", axis=1), df[["y"]]
         self.x_scaler.fit(x)
         self.y_scaler.fit(y)
+    
+    def transform_df(self, df: pd.DataFrame) -> pd.DataFrame:
+        if self.target in df.columns:
+            y = self.transform_y(df[[self.target]])
+            df = df.drop(columns=self.target)
+            x = self.transform_x(df)
+            result_df = pd.DataFrame(x, columns=df.columns)
+            # Add y to the df
+            result_df['y'] = y
+        else:
+            result_df = pd.DataFrame(self.transform_x(df), columns=df.columns)
+        return result_df
 
     def transform_x(self, data: pd.DataFrame = None) -> np.ndarray:
         # Scale x
