@@ -5,6 +5,7 @@ import tensorflow as tf
 
 import matplotlib.pyplot as plt
 
+from agent import Agent
 from model import get_lstm_model
 
 
@@ -97,11 +98,22 @@ class WindowGenerator():
             targets=None,
             sequence_length=self.total_window_size,
             sequence_stride=1,
-            shuffle=True,
-            batch_size=64)
+            shuffle=False,
+            batch_size=10)
+        
+        for thing in ds:
+            asd = self.split_window(thing)
 
         ds = ds.map(self.split_window)
 
+        print(f"RESULTING DATASET FROM MAKE FUNC: {ds}")
+        for a,b in ds:
+            print("Printing first 10 examples")
+            a = a.numpy()
+            b = b.numpy()
+            print(f"\na shape: {a.shape}")
+            print(f"b shape: {b.shape}\n\n")
+            break
         return ds
 
     @property
@@ -116,6 +128,7 @@ class WindowGenerator():
 
     @property
     def test(self):
+        print("CALLING TEST PROPERTY")
         return self.make_dataset(self.test_df)
 
 
@@ -139,21 +152,16 @@ class WindowGenerator():
 
 
 if __name__ == '__main__':
+    a = Agent(n_prev=96, start_index=96, batch_size=64, resolution=15)
     df_train = pd.read_csv(
         './Project 3/no1_train.csv').drop("start_time", axis=1)
     df_val = pd.read_csv(
         './Project 3/no1_validation.csv').drop("start_time", axis=1)
-    scaler = MinMaxScaler()
-    scaled_train = scaler.fit_transform(df_train)
-    # convert it back to dataframe
-    scaled_train = pd.DataFrame(scaled_train, columns=df_train.columns)
-    window = WindowGenerator(input_width=24, label_width=24, shift=24, train_df=scaled_train, val_df=None, test_df=None, label_columns=['y'])
+    a.fit_scalers_to_df(df_train)
+    scaled_train = a.transform_df(df_train)
+    scaled_test = a.transform_df(df_val)
+    print(f"First 15 rows of df_train:\n{scaled_train.head(15)}")
+    window = WindowGenerator(input_width=96, label_width=1, shift=1, train_df=scaled_train, val_df=None, test_df=scaled_test, label_columns=['y'])
     model = get_lstm_model()
-    print('Input shape:', window.example[0].shape)
-    print('Output shape:', model(window.example[0]).shape)
-    history = model.fit(window.train, epochs=1)
-    loss_per_epoch = history.history['loss']
-    plt.plot(range(len(loss_per_epoch)),loss_per_epoch)
-    plt.xlabel('Epoch')
-    plt.ylabel('Loss')
-    plt.show()
+    # model.fit(a.make_training_dataset(df_train), epochs=1)
+    a.train(scaled_train)

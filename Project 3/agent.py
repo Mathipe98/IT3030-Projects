@@ -117,8 +117,11 @@ class Agent:
             data=features,
             targets=labels,
             sequence_length=self.n_prev,
+            sequence_stride=1,
             shuffle=False,
             batch_size=self.batch_size)
+        # Make the dataset return a 3d vector as target
+        ds = ds.map(lambda i,o: (i, tf.expand_dims(o, 1)))
         return ds
 
     def make_testing_dataset(self, data: pd.DataFrame) -> tf.data.Dataset:
@@ -130,14 +133,10 @@ class Agent:
         # Scale x
         x = self.transform_x(x)
         features = np.array(x, dtype=np.float32)
-        if self.n_prev < self.start_index:
-            seq_len = self.n_prev
-        else:
-            seq_len = self.start_index
         ds = tf.keras.utils.timeseries_dataset_from_array(
             data=features,
             targets=None,
-            sequence_length=seq_len,
+            sequence_length=self.n_prev,
             shuffle=False,
             batch_size=self.batch_size)
         return ds
