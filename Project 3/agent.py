@@ -145,16 +145,20 @@ class Agent:
     def train(self, df: pd.DataFrame, model: Sequential = None, epochs: int = 10) -> History:
         if model is None:
             model = get_lstm_model()
-        callbacks = EarlyStopping(
+        cb1 = EarlyStopping(
             monitor='loss',
             patience=3,
             restore_best_weights=False
         )
+        cb2 = tf.keras.callbacks.ModelCheckpoint(
+            './test_model', verbose=1, save_weights_only=True,
+            # Save weights, every epoch.
+            save_freq='epoch')
         if self.resolution == 15:
             # Drop 2 out of every 3 rows
             df = df.iloc[::3]
         ds = self.make_training_dataset(df)
-        return model.fit(ds, epochs=epochs, callbacks=[callbacks])
+        return model.fit(ds, epochs=epochs, callbacks=[cb1, cb2])
 
     def predict_2hrs(self, df: pd.DataFrame, model=None) -> np.ndarray:
         if model is None:
@@ -206,13 +210,13 @@ if __name__ == '__main__':
               start_index=96,
               batch_size=64,
               target='y',
-              verbose=True
+              verbose=False
               )
     model = get_lstm_model()
     df_train = agent.add_previous_y_to_df(df_train, training=True)
     df_val = agent.add_previous_y_to_df(df_val, training=False)
     agent.fit_scalers_to_df(df_train)
-    # agent.train(df_train, model=model, epochs=1)
+    agent.train(df_train, model=model, epochs=1)
     testing_ds = agent.make_testing_dataset(df_val.drop(columns="y"))
     results = agent.predict_2hrs(df_val, model)
     print(results)
