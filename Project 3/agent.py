@@ -1,3 +1,6 @@
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
 import numpy as np
 import pandas as pd
 import tensorflow as tf
@@ -120,8 +123,6 @@ class Agent:
             sequence_stride=1,
             shuffle=False,
             batch_size=self.batch_size)
-        # Make the dataset return a 3d vector as target
-        ds = ds.map(lambda i,o: (i, tf.expand_dims(o, 1)))
         return ds
 
     def make_testing_dataset(self, data: pd.DataFrame) -> tf.data.Dataset:
@@ -173,21 +174,17 @@ class Agent:
         model_output = model(model_input).numpy()
         # Iterate through the batches
         for i in range(model_output.shape[0]):
-            # y_pred has shape [timesteps, features]
             y_pred = model_output[i]
-            # Set previous_y in the df using this value
-            idx1 = self.start_index - self.n_prev + i
-            idx2 = (self.start_index-1) - self.n_prev + len(y_pred) + i
             if self.verbose:
-                print(f"DF rows before loc (+ 2 extra just for visuals):\n{df.loc[idx1:idx2+2]}")
+                print(f"DF rows before loc:\n{df.loc[self.start_index-1:self.start_index+self.n_preds+1]}")
                 print(f"Results of model:\n{y_pred}")
-                # Print indeces
-                print(f"i: {i}, idx1: {idx1}, idx2: {idx2}")
-            df.loc[idx1+1: idx2+1, 'previous_y'] = y_pred
+            # df.loc[idx1+1: idx2+1, 'previous_y'] = y_pred
+            # Set index self.starting_index of 'previous_y' to be the same as the index of the df
+            df.loc[self.start_index+i, 'previous_y'] = y_pred[0]
             if self.verbose:
-                print(f"DF rows AFTER loc (+ 2 extra just for visuals):\n{df.loc[idx1:idx2+2]}")
+                print(f"DF rows AFTER loc:\n{df.loc[self.start_index-1:self.start_index+self.n_preds+1]}")
             # Finally, only append the very last predicted result, as this is the final timestep prediction
-            results.append(y_pred[-1,0])
+            results.append(y_pred[0])
         # Turn results into a dataframe with column "y"
         results = pd.DataFrame(data=results, columns=['y'])
         # Return the inverse transformed version
@@ -208,13 +205,14 @@ if __name__ == '__main__':
               resolution=5,
               start_index=96,
               batch_size=64,
-              target='y'
+              target='y',
+              verbose=True
               )
     model = get_lstm_model()
     df_train = agent.add_previous_y_to_df(df_train, training=True)
     df_val = agent.add_previous_y_to_df(df_val, training=False)
     agent.fit_scalers_to_df(df_train)
-    agent.train(df_train, model=model, epochs=1)
+    # agent.train(df_train, model=model, epochs=1)
     testing_ds = agent.make_testing_dataset(df_val.drop(columns="y"))
     results = agent.predict_2hrs(df_val, model)
     print(results)

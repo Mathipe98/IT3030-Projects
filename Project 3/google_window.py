@@ -1,3 +1,6 @@
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
@@ -99,21 +102,21 @@ class WindowGenerator():
             sequence_length=self.total_window_size,
             sequence_stride=1,
             shuffle=False,
-            batch_size=10)
+            batch_size=1)
         
-        for thing in ds:
-            asd = self.split_window(thing)
+        # for thing in ds:
+        #     asd = self.split_window(thing)
 
         ds = ds.map(self.split_window)
 
-        print(f"RESULTING DATASET FROM MAKE FUNC: {ds}")
-        for a,b in ds:
-            print("Printing first 10 examples")
-            a = a.numpy()
-            b = b.numpy()
-            print(f"\na shape: {a.shape}")
-            print(f"b shape: {b.shape}\n\n")
-            break
+        # print(f"RESULTING DATASET FROM MAKE FUNC: {ds}")
+        # for a,b in ds:
+        #     print("Printing first 1 examples")
+        #     a = a.numpy()
+        #     b = b.numpy()
+        #     print(f"\na shape: {a.shape}")
+        #     print(f"b shape: {b.shape}\n\n")
+        #     break
         return ds
 
     @property
@@ -152,16 +155,35 @@ class WindowGenerator():
 
 
 if __name__ == '__main__':
-    a = Agent(n_prev=96, start_index=96, batch_size=64, resolution=15)
+    agent = Agent(n_prev=3, start_index=3, batch_size=5, resolution=5)
     df_train = pd.read_csv(
         './Project 3/no1_train.csv').drop("start_time", axis=1)
     df_val = pd.read_csv(
         './Project 3/no1_validation.csv').drop("start_time", axis=1)
-    a.fit_scalers_to_df(df_train)
-    scaled_train = a.transform_df(df_train)
-    scaled_test = a.transform_df(df_val)
+    agent.fit_scalers_to_df(df_train)
+    scaled_train = agent.transform_df(df_train)
+    scaled_test = agent.transform_df(df_val)
     print(f"First 15 rows of df_train:\n{scaled_train.head(15)}")
-    window = WindowGenerator(input_width=96, label_width=1, shift=1, train_df=scaled_train, val_df=None, test_df=scaled_test, label_columns=['y'])
+    window = WindowGenerator(input_width=3, label_width=1, shift=0, train_df=scaled_train, val_df=None, test_df=scaled_test, label_columns=['y'])
+    ds1 = window.train
+    ds2 = agent.make_training_dataset(df_train)
+    for b,a in zip(ds1, ds2):
+        a_inp, a_out = a
+        win_inp, win_out = b
+        a_inp = a_inp.numpy()
+        a_out = a_out.numpy()
+        win_inp = win_inp.numpy()
+        win_out = win_out.numpy()
+        print(f"\na_inp shape: {a_inp.shape}")
+        for i in range(a_inp.shape[0]):
+            curr_inp = a_inp[i]
+            # Make a dataframe with columns from df_train except "y"
+            curr_df = pd.DataFrame(curr_inp, columns=df_train.drop(columns="y").columns)
+            print(f"Training X turned into df:\n{curr_df}")
+            print(f"Answer to above prediction: {a_out[i]}")
+            # print(f"Window X turned into df:\n{pd.DataFrame(win_inp[i], columns=df_train.columns)}")
+            # print(f"Answer to above prediction: {win_out[i]}")
+        print(f"Shape of model output: {get_lstm_model()(a_inp).numpy().shape}")
+        break
     model = get_lstm_model()
-    # model.fit(a.make_training_dataset(df_train), epochs=1)
-    a.train(scaled_train)
+    agent.train(scaled_train)
