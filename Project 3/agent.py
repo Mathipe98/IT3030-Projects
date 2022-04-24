@@ -115,7 +115,7 @@ class Agent:
         features = np.array(x, dtype=np.float32)[:-1]
         labels = np.array(y, dtype=np.float32)
         # Roll the labels array s.t. they (timewise) correspond to the correct inputs
-        labels = np.roll(labels, shift=-self.n_prev, axis=0)[:-1]
+        labels = np.roll(labels, shift=-self.n_prev+1, axis=0)[:-1]
         ds = tf.keras.utils.timeseries_dataset_from_array(
             data=features,
             targets=labels,
@@ -131,6 +131,7 @@ class Agent:
         idx1 = max(self.start_index - self.n_prev, 0)
         idx2 = min(self.start_index+self.n_preds-1, len(data))
         x = data[idx1:idx2]
+        print(f"x before transformation in make_testing_dataset:\n{x}")
         # Scale x
         x = self.transform_x(x)
         features = np.array(x, dtype=np.float32)
@@ -159,6 +160,27 @@ class Agent:
             df = df.iloc[::3]
         ds = self.make_training_dataset(df)
         return model.fit(ds, epochs=epochs, callbacks=[cb1, cb2])
+    
+    def predict(self, df: pd.DataFrame, index_to_predict: int, model: Sequential = None) -> float:
+        if model is None:
+            model = get_lstm_model()
+        row_start_index = max(0, index_to_predict-self.n_prev+1)
+        x = np.expand_dims(df.loc[row_start_index:index_to_predict].to_numpy(), axis=0)
+        print(x.shape)
+        model_pred = model(x).numpy()
+        return float(model_pred[0][0])
+    
+    def predict_first_timesteps(self, df: pd.DataFrame, model: Sequential=None) -> pd.DataFrame:
+        if self.verbose:
+            print(f'Predicting first {self.n_preds} timesteps')
+        if model is None:
+            model = get_lstm_model()
+        idx1 = max(self.start_index - self.n_prev, 0)
+        print(f"Df before prediction:\n{df.head(20)}")
+        for i in range(idx1, self.start_index-1):
+            df.loc[i+1, 'previous_y'] = float(self.predict(df, i, model))
+        print(f"Df after prediction:\n{df.head(20)}")
+        return df
 
     def predict_2hrs(self, df: pd.DataFrame, model=None) -> np.ndarray:
         if model is None:
@@ -171,24 +193,11 @@ class Agent:
             # TODO: make sure to adjust the index of the prediction when cutting 2/3rds of the dataframe
             # Right now, this produces an error.
         results = []
-        ds = self.make_testing_dataset(df)
-        # model_input has shape [batch_size, timesteps, features]
-        model_input = next(iter(ds))
-        # model_output will therefore have the same size
-        model_output = model(model_input).numpy()
-        # Iterate through the batches
-        for i in range(model_output.shape[0]):
-            y_pred = model_output[i]
-            if self.verbose:
-                print(f"DF rows before loc:\n{df.loc[self.start_index-1:self.start_index+self.n_preds+1]}")
-                print(f"Results of model:\n{y_pred}")
-            # df.loc[idx1+1: idx2+1, 'previous_y'] = y_pred
-            # Set index self.starting_index of 'previous_y' to be the same as the index of the df
-            df.loc[self.start_index+i, 'previous_y'] = y_pred[0]
-            if self.verbose:
-                print(f"DF rows AFTER loc:\n{df.loc[self.start_index-1:self.start_index+self.n_preds+1]}")
-            # Finally, only append the very last predicted result, as this is the final timestep prediction
-            results.append(y_pred[0])
+        df = self.predict_first_timesteps(df, model)
+        for i in range(self.start_index, self.start_index+self.n_preds):
+            result = self.predict(df, i, model)
+            df.loc[i, 'previous_y'] = result
+            results.append(result)
         # Turn results into a dataframe with column "y"
         results = pd.DataFrame(data=results, columns=['y'])
         # Return the inverse transformed version
@@ -205,19 +214,25 @@ if __name__ == '__main__':
         './Project 3/no1_train.csv').drop("start_time", axis=1)
     df_val = pd.read_csv(
         './Project 3/no1_validation.csv').drop("start_time", axis=1)
-    agent = Agent(n_prev=96,
+    agent = Agent(n_prev=10,
               resolution=5,
-              start_index=96,
+              start_index=10,
               batch_size=64,
               target='y',
               verbose=False
               )
-    model = get_lstm_model()
-    df_train = agent.add_previous_y_to_df(df_train, training=True)
-    df_val = agent.add_previous_y_to_df(df_val, training=False)
+    df_train['previous_y'] = 0
     agent.fit_scalers_to_df(df_train)
-    agent.train(df_train, model=model, epochs=1)
-    testing_ds = agent.make_testing_dataset(df_val.drop(columns="y"))
-    results = agent.predict_2hrs(df_val, model)
-    print(results)
-    agent.visualize_results(df_val['y'], results, start_index=agent.start_index)
+    # agent.predict(df_train, index_to_predict=10)
+    agent.predict_first_timesteps(df_train)
+    agent.predict_2hrs(df_train)
+    #agent.predict_2hrs(df_train)
+    # model = get_lstm_model()
+    # df_train = agent.add_previous_y_to_df(df_train, training=True)
+    # df_val = agent.add_previous_y_to_df(df_val, training=False)
+    # agent.fit_scalers_to_df(df_train)
+    # agent.train(df_train, model=model, epochs=1)
+    # testing_ds = agent.make_testing_dataset(df_val.drop(columns="y"))
+    # results = agent.predict_2hrs(df_val, model)
+    # print(results)
+    # agent.visualize_results(df_val['y'], results, start_index=agent.start_index)

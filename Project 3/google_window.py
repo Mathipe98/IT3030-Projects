@@ -155,35 +155,39 @@ class WindowGenerator():
 
 
 if __name__ == '__main__':
-    agent = Agent(n_prev=3, start_index=3, batch_size=5, resolution=5)
+    agent = Agent(n_prev=3, start_index=0, batch_size=1, resolution=5)
     df_train = pd.read_csv(
         './Project 3/no1_train.csv').drop("start_time", axis=1)
     df_val = pd.read_csv(
         './Project 3/no1_validation.csv').drop("start_time", axis=1)
+    # Add column to df_train and df_val that are just incremental counters
+    df_train['counter'] = df_train.index
+    df_val['counter'] = df_val.index
     agent.fit_scalers_to_df(df_train)
     scaled_train = agent.transform_df(df_train)
     scaled_test = agent.transform_df(df_val)
-    print(f"First 15 rows of df_train:\n{scaled_train.head(15)}")
-    window = WindowGenerator(input_width=3, label_width=1, shift=0, train_df=scaled_train, val_df=None, test_df=scaled_test, label_columns=['y'])
-    ds1 = window.train
-    ds2 = agent.make_training_dataset(df_train)
-    for b,a in zip(ds1, ds2):
-        a_inp, a_out = a
-        win_inp, win_out = b
+    print(f"First 15 rows of df_val:\n{scaled_test.head(15)}")
+    # window = WindowGenerator(input_width=3, label_width=1, shift=0, train_df=scaled_train, val_df=None, test_df=scaled_test, label_columns=['y'])
+    # ds1 = window.train
+    k = 0
+    ds2 = agent.make_testing_dataset(df_val.drop(columns='y'))
+    for a in ds2:
+        # a_inp, a_out = a
+        a_inp = a
         a_inp = a_inp.numpy()
-        a_out = a_out.numpy()
-        win_inp = win_inp.numpy()
-        win_out = win_out.numpy()
+        # a_out = a_out.numpy()
         print(f"\na_inp shape: {a_inp.shape}")
         for i in range(a_inp.shape[0]):
             curr_inp = a_inp[i]
             # Make a dataframe with columns from df_train except "y"
-            curr_df = pd.DataFrame(curr_inp, columns=df_train.drop(columns="y").columns)
+            curr_df = pd.DataFrame(curr_inp, columns=df_val.drop(columns="y").columns)
             print(f"Training X turned into df:\n{curr_df}")
-            print(f"Answer to above prediction: {a_out[i]}")
+            # print(f"Answer to above prediction: {a_out[i]}")
             # print(f"Window X turned into df:\n{pd.DataFrame(win_inp[i], columns=df_train.columns)}")
             # print(f"Answer to above prediction: {win_out[i]}")
         print(f"Shape of model output: {get_lstm_model()(a_inp).numpy().shape}")
-        break
+        if k >= 3:
+            break
+        k += 1
     model = get_lstm_model()
-    agent.train(scaled_train)
+    # agent.train(scaled_train)
