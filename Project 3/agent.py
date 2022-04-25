@@ -1,3 +1,4 @@
+import df_helpers as dfh
 import matplotlib.pyplot as plt
 import numpy as np
 import os
@@ -44,11 +45,6 @@ class Agent:
         # Else we need 24 predictions (24*5=120) to fill the 2 hours
         self.pred_timesteps = 8 if resolution == 15 else 24
         self.scalers = None
-
-    def add_previous_y_to_df(self, df: pd.DataFrame) -> pd.DataFrame:
-        # Add column to x, called previous_y, which is the last y value
-        df = df.assign(previous_y=df[self.target].shift(1)).fillna(0)
-        return df
     
     def fit_scalers(self, df: pd.DataFrame) -> None:
         scalers = {}
@@ -158,6 +154,10 @@ class Agent:
             result = self.predict(df, i)
             if replace:
                 df.loc[i+1, 'previous_y'] = result
+                # Since we added features based on previous_y values, we must update them when replacing
+                df = dfh.add_rolling_avg(df, feature='previous_y', hours=24)
+                df = dfh.add_rolling_avg(df, feature='previous_y', hours=12)
+                df = dfh.add_rolling_avg(df, feature='previous_y', hours=6)
             results.append(result)
         target_scaler = self.scalers[self.target]
         # Undo the scaling
