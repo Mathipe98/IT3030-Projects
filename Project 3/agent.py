@@ -47,7 +47,7 @@ class Agent:
         self.filepath = filepath
         # If resolution is 15 minutes, then we need 8*15 = 120 minutes = 2 hrs.
         # Else we need 24 predictions (24*5=120) to fill the 2 hours
-        self.n_preds = 8 if resolution == 15 else 24
+        self.n_timesteps = 8 if resolution == 15 else 24
         self.x_scaler, self.y_scaler = self.setup_scalers()
 
     def setup_scalers(self) -> Tuple[MinMaxScaler, MinMaxScaler]:
@@ -172,9 +172,9 @@ class Agent:
         model_pred = model(x).numpy()
         return float(model_pred[0][0])
     
-    def predict_first_timesteps(self, df: pd.DataFrame, model: Sequential=None) -> pd.DataFrame:
+    def warmup_predict(self, df: pd.DataFrame, model: Sequential=None) -> pd.DataFrame:
         if self.verbose:
-            print(f'Predicting first {self.n_preds} timesteps')
+            print(f'Predicting first {self.n_timesteps} timesteps')
         if model is None:
             model = get_lstm_model()
         idx1 = max(self.start_index - self.n_prev, 0)
@@ -184,20 +184,22 @@ class Agent:
         # print(f"\nDf after prediction:\n{df.head(20)}")
         return df
 
-    def predict_2hrs(self, df: pd.DataFrame, model=None) -> np.ndarray:
+    def predict_n_timesteps(self, df: pd.DataFrame, model=None, n_timesteps: int=None) -> np.ndarray:
         if model is None:
             model = get_lstm_model()
         if 'y' in df.columns:
             df = df.drop('y', axis=1)
+        if n_timesteps is None:
+            n_timesteps = self.n_timesteps
         if self.resolution == 15:
             # Drop 2 out of every 3 rows
             df = df.iloc[::3]
             # TODO: make sure to adjust the index of the prediction when cutting 2/3rds of the dataframe
             # Right now, this produces an error.
         results = []
-        df = self.predict_first_timesteps(df, model)
+        df = self.warmup_predict(df, model)
         # print('\n===== STARTING 2HR PREDICTION =====\n')
-        for i in range(self.start_index, self.start_index+self.n_preds):
+        for i in range(self.start_index, self.start_index+n_timesteps):
             result = self.predict(df, i, model)
             df.loc[i+1, 'previous_y'] = result
             results.append(result)
@@ -206,9 +208,11 @@ class Agent:
         # Return the inverse transformed version
         return self.inverse_transform_y(results)
 
-    def visualize_results(self, y_true: pd.Series, y_pred: np.ndarray) -> None:
+    def visualize_results(self, y_true: pd.Series, y_pred: np.ndarray, n_timesteps: int=None) -> None:
+        if n_timesteps is None:
+            n_timesteps = self.n_timesteps
         results = pd.DataFrame(
-            {'y_true': y_true.values[self.start_index:self.start_index+self.n_preds], 'y_pred': y_pred.ravel()})
+            {'y_true': y_true.values[self.start_index:self.start_index+n_timesteps], 'y_pred': y_pred.ravel()})
         results.plot(figsize=(20, 8))
 
 
@@ -228,7 +232,7 @@ if __name__ == '__main__':
     agent.fit_scalers_to_df(df_train)
     # agent.predict(df_train, index_to_predict=10)
     # agent.predict_first_timesteps(df_train)
-    agent.predict_2hrs(df_train)
+    agent.predict_n_timesteps(df_train)
     #agent.predict_2hrs(df_train)
     # model = get_lstm_model()
     # df_train = agent.add_previous_y_to_df(df_train, training=True)
