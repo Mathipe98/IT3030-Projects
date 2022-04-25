@@ -8,7 +8,7 @@ from keras.preprocessing.sequence import TimeseriesGenerator
 from keras import Sequential
 from keras.callbacks import History, EarlyStopping
 from sklearn.preprocessing import MinMaxScaler, Normalizer, normalize, StandardScaler
-from typing import Tuple
+from typing import List, Tuple
 
 from model import get_lstm_model
 
@@ -41,22 +41,46 @@ class Agent:
         # If resolution is 15 minutes, then we need 8*15 = 120 minutes = 2 hrs.
         # Else we need 24 predictions (24*5=120) to fill the 2 hours
         self.pred_timesteps = 8 if resolution == 15 else 24
-        self.scaler = MinMaxScaler(feature_range=(self.min_scale, self.max_scale))
+        self.scalers = None
 
     def add_previous_y_to_df(self, df: pd.DataFrame) -> pd.DataFrame:
         # Add column to x, called previous_y, which is the last y value
         df = df.assign(previous_y=df[self.target].shift(1)).fillna(0)
         return df
     
-    def fit_scaler(self, df: pd.DataFrame) -> None:
-        self.scaler.fit(df)
-
-    def transform_df(self, df: pd.DataFrame) -> pd.DataFrame:
-        result_df = pd.DataFrame(self.scaler.transform(df), columns=df.columns)
-        return result_df
+    def fit_scalers(self, df: pd.DataFrame) -> None:
+        scalers = {}
+        for i in range(len(df.columns)):
+            scaler = MinMaxScaler(feature_range=(self.min_scale, self.max_scale))
+            scaler.fit(df[[df.columns[i]]])
+            scalers[df.columns[i]] = scaler
+        self.scalers = scalers
     
-    def inverse_transform_df(self, df: pd.DataFrame) -> pd.DataFrame:
-        return pd.DataFrame(self.scaler.inverse_transform(df), columns=df.columns)
+    def transform(self, df: pd.DataFrame, columns: List[str]=None) -> pd.DataFrame:
+        if self.scalers is None:
+            raise ValueError(
+                f'Scalers have not been fit')
+        if columns is None:
+            columns = df.columns
+        for column in columns:
+            if column not in df:
+                raise ValueError(
+                    f'Column {column} not in dataframe')
+            if column not in self.scalers:
+                raise ValueError(f'Column {column} has not been fitted with a scaler')
+            scaler = self.scalers[column]
+            df[column] = scaler.transform(df[[column]])
+        return df
+    
+    # def fit_scaler(self, df: pd.DataFrame) -> None:
+    #     self.scaler.fit(df)
+
+    # def transform_df(self, df: pd.DataFrame) -> pd.DataFrame:
+    #     result_df = pd.DataFrame(self.scaler.transform(df), columns=df.columns)
+    #     return result_df
+    
+    # def inverse_transform_df(self, df: pd.DataFrame) -> pd.DataFrame:
+    #     return pd.DataFrame(self.scaler.inverse_transform(df), columns=df.columns)
 
     def make_training_dataset(self, df: pd.DataFrame) -> tf.data.Dataset:
         if self.verbose:
@@ -146,7 +170,6 @@ class Agent:
             n_timesteps = self.pred_timesteps
         # [self.start_index:self.start_index+n_timesteps]
         y_true = y_true.to_numpy()[self.start_index:self.start_index+n_timesteps]
-        print(len(y_true))
         y_pred = y_pred.to_numpy()
         results = pd.DataFrame(
             {'y_true': y_true.ravel(), 'y_pred': y_pred.ravel()})
