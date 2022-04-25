@@ -17,3 +17,10 @@ def get_rows_between(df: pd.DataFrame, feature: str, lower: float, upper: float)
     Returns a dataframe of rows that are between the given lower and upper bounds.
     """
     return df[(df[feature] >= lower) & (df[feature] <= upper)]
+
+def add_shift(df: pd.DataFrame, feature: str, hours: int) -> pd.DataFrame:
+    """
+    Adds a column to the dataframe that is the shifted value of the given feature.
+    """
+    df[f'{feature}_shift_{hours}'] = df[feature].shift((60*hours)//5).fillna(0)
+    return df

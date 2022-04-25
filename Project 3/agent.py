@@ -140,7 +140,7 @@ class Agent:
         model_pred = self.model(x).numpy()
         return float(model_pred[0][0])
 
-    def predict_n_timesteps(self, df: pd.DataFrame, n_timesteps: int = None) -> np.array:
+    def predict_n_timesteps(self, df: pd.DataFrame, n_timesteps: int = None, replace: bool=True) -> np.array:
         df = df.copy()
         if self.target in df.columns:
             df = df.drop(self.target, axis=1)
@@ -156,7 +156,8 @@ class Agent:
             print('\n===== CALLING PREDICT_N_TIMESTEPS =====')
         for i in range(self.start_index, self.start_index+n_timesteps):
             result = self.predict(df, i)
-            df.loc[i+1, 'previous_y'] = result
+            if replace:
+                df.loc[i+1, 'previous_y'] = result
             results.append(result)
         target_scaler = self.scalers[self.target]
         # Undo the scaling
