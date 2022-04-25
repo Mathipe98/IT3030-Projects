@@ -71,16 +71,6 @@ class Agent:
             scaler = self.scalers[column]
             df[column] = scaler.transform(df[[column]])
         return df
-    
-    # def fit_scaler(self, df: pd.DataFrame) -> None:
-    #     self.scaler.fit(df)
-
-    # def transform_df(self, df: pd.DataFrame) -> pd.DataFrame:
-    #     result_df = pd.DataFrame(self.scaler.transform(df), columns=df.columns)
-    #     return result_df
-    
-    # def inverse_transform_df(self, df: pd.DataFrame) -> pd.DataFrame:
-    #     return pd.DataFrame(self.scaler.inverse_transform(df), columns=df.columns)
 
     def make_training_dataset(self, df: pd.DataFrame) -> tf.data.Dataset:
         if self.verbose:
@@ -145,7 +135,7 @@ class Agent:
         model_pred = self.model(x).numpy()
         return float(model_pred[0][0])
 
-    def predict_n_timesteps(self, df: pd.DataFrame, n_timesteps: int = None) -> pd.Series:
+    def predict_n_timesteps(self, df: pd.DataFrame, n_timesteps: int = None) -> np.array:
         df = df.copy()
         if self.target in df.columns:
             df = df.drop(self.target, axis=1)
@@ -163,14 +153,16 @@ class Agent:
             result = self.predict(df, i)
             df.loc[i+1, 'previous_y'] = result
             results.append(result)
-        return self.inverse_transform_df(df)[self.start_index+1:self.start_index+n_timesteps+1]['previous_y']
+        target_scaler = self.scalers[self.target]
+        # Undo the scaling
+        results = target_scaler.inverse_transform(np.array(results).reshape(-1, 1))
+        return results
 
-    def visualize_results(self, y_true: pd.Series, y_pred: pd.Series, n_timesteps: int = None) -> None:
+    def visualize_results(self, y_true: np.array, y_pred: np.array, n_timesteps: int = None) -> None:
         if n_timesteps is None:
             n_timesteps = self.pred_timesteps
         # [self.start_index:self.start_index+n_timesteps]
-        y_true = y_true.to_numpy()[self.start_index:self.start_index+n_timesteps]
-        y_pred = y_pred.to_numpy()
+        y_true = y_true[self.start_index:self.start_index+n_timesteps]
         results = pd.DataFrame(
             {'y_true': y_true.ravel(), 'y_pred': y_pred.ravel()})
         results.plot(figsize=(20, 8))
@@ -199,19 +191,19 @@ if __name__ == '__main__':
         target='y',
         verbose=True
     )
-    y_true = df_val['y']
-    agent.fit_scaler(df_train)
-    print(f"\nOriginal df_train:\n{df_train.head(15)}")
-    print(f"\nOriginal df_val:\n{df_val.head(15)}\n")
-    df_train = agent.transform_df(df_train)
-    df_val = agent.transform_df(df_val)
-    print(f"\nTransformed df_train:\n{df_train.head(15)}")
-    print(f"\nTransformed df_val:\n{df_val.head(15)}\n")
+    y_true = df_val['y'].to_numpy()
+    agent.fit_scalers(df_train)
+    # print(f"\nOriginal df_train:\n{df_train.head(15)}")
+    # print(f"\nOriginal df_val:\n{df_val.head(15)}\n")
+    df_train = agent.transform(df_train)
+    df_val = agent.transform(df_val)
+    # print(f"\nTransformed df_train:\n{df_train.head(15)}")
+    # print(f"\nTransformed df_val:\n{df_val.head(15)}\n")
     df_train = agent.add_previous_y_to_df(df_train)
     df_val = agent.add_previous_y_to_df(df_val)
-    print(f"\nTrans df_train after prev_y:\n{df_train.head(15)}")
-    print(f"Trans df_val after prev_y:\n{df_val.head(15)}\n")
-    agent.train(df_train, epochs=1)
+    # print(f"\nTrans df_train after prev_y:\n{df_train.head(15)}")
+    # print(f"Trans df_val after prev_y:\n{df_val.head(15)}\n")
+    # agent.train(df_train, epochs=1)
     result = agent.predict_n_timesteps(df_val, n_timesteps=5)
-    print(f"Resulting pd Series:\n{result}\n")
+    print(f"Resulting array:\n{result}\n")
     agent.visualize_results(y_true=y_true, y_pred=result, n_timesteps=5)
