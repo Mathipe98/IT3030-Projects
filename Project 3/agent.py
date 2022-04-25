@@ -19,7 +19,7 @@ class Agent:
 
     def __init__(self, min_scale: int = 0, max_scale: int = 1, resolution: int = 15,
                  n_prev: int = 96, start_index: int = 96, batch_size: int = 64,
-                 target: str = "y", verbose: bool=False) -> None:
+                 target: str = "y", verbose: bool=False, filepath: str='./models/LSTM_model') -> None:
         if start_index < n_prev:
             raise ValueError(
                 f'Start index ({start_index}) must be greater than or equal to n_prev ({n_prev})')
@@ -44,6 +44,7 @@ class Agent:
         self.batch_size = batch_size
         self.target = target
         self.verbose = verbose
+        self.filepath = filepath
         # If resolution is 15 minutes, then we need 8*15 = 120 minutes = 2 hrs.
         # Else we need 24 predictions (24*5=120) to fill the 2 hours
         self.n_preds = 8 if resolution == 15 else 24
@@ -125,23 +126,23 @@ class Agent:
             batch_size=self.batch_size)
         return ds
 
-    def make_testing_dataset(self, data: pd.DataFrame) -> tf.data.Dataset:
-        if self.verbose:
-            print(f'Making testing dataset to predict {self.n_preds} timesteps')
-        idx1 = max(self.start_index - self.n_prev, 0)
-        idx2 = min(self.start_index+self.n_preds-1, len(data))
-        x = data[idx1:idx2]
-        print(f"x before transformation in make_testing_dataset:\n{x}")
-        # Scale x
-        x = self.transform_x(x)
-        features = np.array(x, dtype=np.float32)
-        ds = tf.keras.utils.timeseries_dataset_from_array(
-            data=features,
-            targets=None,
-            sequence_length=self.n_prev,
-            shuffle=False,
-            batch_size=self.batch_size)
-        return ds
+    # def make_testing_dataset(self, data: pd.DataFrame) -> tf.data.Dataset:
+    #     if self.verbose:
+    #         print(f'Making testing dataset to predict {self.n_preds} timesteps')
+    #     idx1 = max(self.start_index - self.n_prev, 0)
+    #     idx2 = min(self.start_index+self.n_preds-1, len(data))
+    #     x = data[idx1:idx2]
+    #     print(f"x before transformation in make_testing_dataset:\n{x}")
+    #     # Scale x
+    #     x = self.transform_x(x)
+    #     features = np.array(x, dtype=np.float32)
+    #     ds = tf.keras.utils.timeseries_dataset_from_array(
+    #         data=features,
+    #         targets=None,
+    #         sequence_length=self.n_prev,
+    #         shuffle=False,
+    #         batch_size=self.batch_size)
+    #     return ds
 
     def train(self, df: pd.DataFrame, model: Sequential = None, epochs: int = 10) -> History:
         if model is None:
@@ -152,7 +153,7 @@ class Agent:
             restore_best_weights=False
         )
         cb2 = tf.keras.callbacks.ModelCheckpoint(
-            './test_model', verbose=1, save_weights_only=True,
+            self.filepath, verbose=1, save_weights_only=True,
             # Save weights, every epoch.
             save_freq='epoch')
         if self.resolution == 15:
@@ -165,8 +166,9 @@ class Agent:
         if model is None:
             model = get_lstm_model()
         row_start_index = max(0, index_to_predict-self.n_prev+1)
+        # print(f"Predicting based on previous DF segment:\n{df.loc[row_start_index:index_to_predict]}")
         x = np.expand_dims(df.loc[row_start_index:index_to_predict].to_numpy(), axis=0)
-        print(x.shape)
+        # print(x.shape)
         model_pred = model(x).numpy()
         return float(model_pred[0][0])
     
@@ -176,10 +178,10 @@ class Agent:
         if model is None:
             model = get_lstm_model()
         idx1 = max(self.start_index - self.n_prev, 0)
-        print(f"Df before prediction:\n{df.head(20)}")
-        for i in range(idx1, self.start_index-1):
+        # print(f"\nDf before prediction:\n{df.head(20)}")
+        for i in range(idx1, self.start_index):
             df.loc[i+1, 'previous_y'] = float(self.predict(df, i, model))
-        print(f"Df after prediction:\n{df.head(20)}")
+        # print(f"\nDf after prediction:\n{df.head(20)}")
         return df
 
     def predict_2hrs(self, df: pd.DataFrame, model=None) -> np.ndarray:
@@ -194,9 +196,10 @@ class Agent:
             # Right now, this produces an error.
         results = []
         df = self.predict_first_timesteps(df, model)
+        # print('\n===== STARTING 2HR PREDICTION =====\n')
         for i in range(self.start_index, self.start_index+self.n_preds):
             result = self.predict(df, i, model)
-            df.loc[i, 'previous_y'] = result
+            df.loc[i+1, 'previous_y'] = result
             results.append(result)
         # Turn results into a dataframe with column "y"
         results = pd.DataFrame(data=results, columns=['y'])
@@ -216,7 +219,7 @@ if __name__ == '__main__':
         './Project 3/no1_validation.csv').drop("start_time", axis=1)
     agent = Agent(n_prev=10,
               resolution=5,
-              start_index=10,
+              start_index=50,
               batch_size=64,
               target='y',
               verbose=False
@@ -224,7 +227,7 @@ if __name__ == '__main__':
     df_train['previous_y'] = 0
     agent.fit_scalers_to_df(df_train)
     # agent.predict(df_train, index_to_predict=10)
-    agent.predict_first_timesteps(df_train)
+    # agent.predict_first_timesteps(df_train)
     agent.predict_2hrs(df_train)
     #agent.predict_2hrs(df_train)
     # model = get_lstm_model()
