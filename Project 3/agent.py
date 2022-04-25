@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import os
 import pandas as pd
 import tensorflow as tf
 import warnings
@@ -7,6 +8,7 @@ import warnings
 from keras.preprocessing.sequence import TimeseriesGenerator
 from keras import Sequential
 from keras.callbacks import History, EarlyStopping
+from multiprocessing.pool import ThreadPool as Pool
 from sklearn.preprocessing import MinMaxScaler, Normalizer, normalize, StandardScaler
 from typing import List, Tuple
 
@@ -94,21 +96,24 @@ class Agent:
             batch_size=self.batch_size)
         return ds
     
+    def generate_splits(self, index: int):
+            if index % 10000 == 0 and self.verbose:
+                print(f'Processing chunk {index}')
+            inputs = self.x.loc[index+1:index+self.n_prev].to_numpy()
+            target = self.y.loc[index+self.n_prev].to_numpy()
+            return inputs, target
+    
     def make_dataset(self, df: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
         if self.verbose:
             print(f'\n===== CALLING MAKE_DATASET =====')
         x, y = df.drop(columns=self.target), df[[self.target]]
-        x_train = []
-        y_train = []
-        for i in range(0, len(df)-self.n_prev-1, 1):
-            if i % 10000 == 0 and self.verbose:
-                print(f"i: {i}")
-            inputs = x.loc[i+1:i+self.n_prev].to_numpy()
-            target = y.loc[i+self.n_prev].to_numpy()
-            x_train.append(inputs)
-            y_train.append(target)
-        x_train = np.array(x_train)
-        y_train = np.array(y_train)
+        self.x = x
+        self.y = y
+        indeces = [i for i in range(0, len(df)-self.n_prev-1)]
+        pool = Pool(processes=10)
+        result = pool.map(self.generate_splits, indeces)
+        x_train = np.array([i[0] for i in result])
+        y_train = np.array([i[1] for i in result])
         print('Finished making dataset.\n')
         return x_train, y_train
 
@@ -191,19 +196,3 @@ if __name__ == '__main__':
         target='y',
         verbose=True
     )
-    y_true = df_val['y'].to_numpy()
-    agent.fit_scalers(df_train)
-    # print(f"\nOriginal df_train:\n{df_train.head(15)}")
-    # print(f"\nOriginal df_val:\n{df_val.head(15)}\n")
-    df_train = agent.transform(df_train)
-    df_val = agent.transform(df_val)
-    # print(f"\nTransformed df_train:\n{df_train.head(15)}")
-    # print(f"\nTransformed df_val:\n{df_val.head(15)}\n")
-    df_train = agent.add_previous_y_to_df(df_train)
-    df_val = agent.add_previous_y_to_df(df_val)
-    # print(f"\nTrans df_train after prev_y:\n{df_train.head(15)}")
-    # print(f"Trans df_val after prev_y:\n{df_val.head(15)}\n")
-    # agent.train(df_train, epochs=1)
-    result = agent.predict_n_timesteps(df_val, n_timesteps=5)
-    print(f"Resulting array:\n{result}\n")
-    agent.visualize_results(y_true=y_true, y_pred=result, n_timesteps=5)
