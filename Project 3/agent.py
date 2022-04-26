@@ -1,19 +1,15 @@
 import df_helpers as dfh
 import matplotlib.pyplot as plt
 import numpy as np
-import os
 import pandas as pd
 import tensorflow as tf
-import warnings
 
-from keras.preprocessing.sequence import TimeseriesGenerator
 from keras import Sequential
 from keras.callbacks import History, EarlyStopping
 from multiprocessing.pool import ThreadPool as Pool
-from sklearn.preprocessing import MinMaxScaler, Normalizer, normalize, StandardScaler
+from sklearn.preprocessing import MinMaxScaler
 from typing import List, Tuple
 
-from model import get_model
 
 np.set_printoptions(edgeitems=50, linewidth=10000)
 np.random.seed(314159)
@@ -24,10 +20,13 @@ class Agent:
     def __init__(self, min_scale: int = 0, max_scale: int = 1, resolution: int = 15,
                  n_prev: int = 96, batch_size: int = 64,
                  target: str = "y", verbose: bool = False,
-                 model: Sequential = None, filepath: str = './models/LSTM_model') -> None:
+                 model: Sequential=None, filepath: str = './models/LSTM_model') -> None:
         if resolution != 5 and resolution != 15:
             raise ValueError(
                 f'Resolution must be either 5 or 15, got {resolution}')
+        if model is None:
+            raise ValueError(
+                f'Model must be specified, got {model}')
         print(f'Resolution is {resolution} and n_prev is {n_prev}. This is equivalent to looking back {(n_prev * resolution) // 60} hours and {(n_prev * resolution) % 60} minutes. ')
         self.min_scale = min_scale
         self.max_scale = max_scale
@@ -36,7 +35,7 @@ class Agent:
         self.batch_size = batch_size
         self.target = target
         self.verbose = verbose
-        self.model = model if model is not None else get_model()
+        self.model = model
         self.filepath = filepath
         # If resolution is 15 minutes, then we need 8*15 = 120 minutes = 2 hrs.
         # Else we need 24 predictions (24*5=120) to fill the 2 hours
