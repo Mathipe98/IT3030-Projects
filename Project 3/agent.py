@@ -172,6 +172,7 @@ class Agent:
                 df = dfh.add_rolling_avg(df, feature='previous_y', hours=24)
                 df = dfh.add_rolling_avg(df, feature='previous_y', hours=12)
                 df = dfh.add_rolling_avg(df, feature='previous_y', hours=6)
+                df = dfh.update_altered_forecast(df, features=['total', 'flow'])
             results.append(result)
         target_scaler = self.scalers[self.target]
         # Undo the scaling
@@ -214,7 +215,7 @@ class Agent:
         # Make a list with 10 different random numbers between self.n_prev and len(df)-self.n_prev
         random_indeces = np.random.randint(
             self.n_prev, len(df)-self.n_prev, n_batches)
-        fig, axes = plt.subplots(nrows=2, ncols=n_batches//2, figsize=(20, 8))
+        _, axes = plt.subplots(nrows=2, ncols=n_batches//2, figsize=(20, 8))
         axes = axes.ravel()
         preds = []
         for index in random_indeces:

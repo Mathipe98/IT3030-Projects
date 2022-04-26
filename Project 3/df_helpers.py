@@ -41,7 +41,6 @@ def add_rolling_avg(df: pd.DataFrame, feature: str, hours: int) -> pd.DataFrame:
     df[f'{feature}_avg_prev_{hours}h'] = df[feature].rolling((60*hours)//5).mean().fillna(0)
     return df
 
-
 def spline_interpolate(df: pd.DataFrame, features: List[str], market_time: str='hourly') -> pd.DataFrame:
     if market_time != 'hourly' and market_time != 'quarterly':
         raise ValueError('market_time must be either hourly or quarterly')
@@ -70,7 +69,16 @@ def spline_interpolate(df: pd.DataFrame, features: List[str], market_time: str='
 def add_altered_forecast(df: pd.DataFrame, features: List[str], market_time: str='hourly') -> pd.DataFrame:
     inter_df = spline_interpolate(df, features, market_time)
     inter_df['diff'] = inter_df['interpolated'] - inter_df['sum']
-    df['altered_imbalance'] = df['y'] - inter_df['diff']
+    df = df.copy()
+    df['previous_y'] = df['previous_y'].shift(-1).fillna(0)
+    df['altered_imbalance'] = df['previous_y'] - inter_df['diff']
+    df['previous_y'] = df['previous_y'].shift(1).fillna(0)
     # Shift by 1
     df['previous_altered_imbalance'] = df['altered_imbalance'].shift(1).fillna(0)
+    return df
+
+def update_altered_forecast(df: pd.DataFrame, features: List[str], market_time: str='hourly') -> pd.DataFrame:
+    inter_df = spline_interpolate(df, features, market_time)
+    inter_df['diff'] = inter_df['interpolated'] - inter_df['sum']
+    df['previous_altered_imbalance'] = df['previous_y'] - inter_df['diff']
     return df
