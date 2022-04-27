@@ -123,12 +123,11 @@ class Agent:
             if self.verbose:
                 print(f"Could not load model from {self.filepath}. Training new model.")
             cb1 = EarlyStopping(
-                monitor='loss',
+                monitor='val_loss',
                 patience=5,
-                restore_best_weights=False
+                restore_best_weights=True
             )
-            cb2 = tf.keras.callbacks.ModelCheckpoint(
-                self.filepath, verbose=1, monitor='loss')
+            cb2 = tf.keras.callbacks.ModelCheckpoint(self.filepath, verbose=1)
             if self.resolution == 15:
                 # Drop 2 out of every 3 rows
                 train = train.iloc[::3]

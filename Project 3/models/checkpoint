@@ -1,2 +1,0 @@
-model_checkpoint_path: "LSTM_normal_forecast"
-all_model_checkpoint_paths: "LSTM_normal_forecast"
