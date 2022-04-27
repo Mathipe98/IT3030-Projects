@@ -124,10 +124,10 @@ class Agent:
                 print(f"Could not load model from {self.filepath}. Training new model.")
             cb1 = EarlyStopping(
                 monitor='val_loss',
-                patience=5,
+                patience=15,
                 restore_best_weights=True
             )
-            cb2 = tf.keras.callbacks.ModelCheckpoint(self.filepath, verbose=1)
+            # cb2 = tf.keras.callbacks.ModelCheckpoint(self.filepath, verbose=1)
             if self.resolution == 15:
                 # Drop 2 out of every 3 rows
                 train = train.iloc[::3]
@@ -137,7 +137,9 @@ class Agent:
             if self.verbose:
                 print('Generating validation data...')
             x_valid, y_valid = self.make_dataset(valid)
-            return self.model.fit(x_train, y_train, validation_data=(x_valid, y_valid), epochs=epochs, callbacks=[cb1, cb2])
+            history = self.model.fit(x_train, y_train, validation_data=(x_valid, y_valid), epochs=epochs, callbacks=[cb1])
+            self.model.save_weights(self.filepath)
+            return history
 
     def predict(self, df: pd.DataFrame, index_to_predict: int) -> float:
         row_start_index = max(0, index_to_predict-self.n_prev+1)
