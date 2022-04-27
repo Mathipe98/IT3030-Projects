@@ -124,8 +124,8 @@ class Agent:
                 print(f"Could not load model from {self.filepath}. Training new model.")
             cb1 = EarlyStopping(
                 monitor='val_loss',
-                patience=15,
-                restore_best_weights=True
+                patience=30,
+                restore_best_weights=False
             )
             # cb2 = tf.keras.callbacks.ModelCheckpoint(self.filepath, verbose=1)
             if self.resolution == 15:

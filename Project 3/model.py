@@ -14,12 +14,13 @@ from keras.layers import LSTM, Dense
 
 def get_model(lstm_units: List[int], dense_units: List[int], lr: float) -> Sequential:
     model = Sequential()
+    regularizer = tf.keras.regularizers.l1_l2(l1=0.01, l2=0.01)
     for i in lstm_units:
         if i == lstm_units[-1]:
             seq = False
         else:
             seq = True
-        model.add(LSTM(units=i, return_sequences=seq, dropout=0.1))
+        model.add(LSTM(units=i, return_sequences=seq, dropout=0.1, kernel_regularizer=regularizer))
     for i in dense_units:
         model.add(Dense(i))
     model.add(Dense(1))
