@@ -15,8 +15,7 @@ NOTES REGARDING PARAMETERS:
         - [512, 256, 128, 64, 32, 16]
 
         - The thought of the low-value units was that the model only seems to care much about the
-            closest values in time, therefore the activation passed between the LSTM cells (i.e. the 'units' value)
-            could be low. However after much testing, the optimal units values were 128 and 64.
+            closest values in time. After much testing, the optimal units values were 128 and 64.
 
     
     - Following Dense units have been tested:
